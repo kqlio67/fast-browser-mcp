@@ -711,7 +711,7 @@ class BatchRunner:
                     step_res["blocked"] = res
 
                 elif action == "cleanup_tabs":
-                    res = self.cdp.cleanup_tabs(
+                    res = await self.cdp.cleanup_tabs_async(
                         keep_current=step.get("keep_current", True),
                         close_blank=step.get("close_blank", True),
                         url_patterns=step.get("url_patterns")

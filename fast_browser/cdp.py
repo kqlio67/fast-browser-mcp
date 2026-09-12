@@ -697,7 +697,7 @@ class CDPClient:
         if not target_url.startswith("chrome://") and not target_url.startswith("http"):
             target_url = f"chrome://{target_url}"
         
-        targets = self.list_targets()
+        targets = await self.list_targets_async()
         for t in targets:
             if t.get("type") == "page" and t.get("url", "").rstrip("/") == target_url.rstrip("/"):
                 await self.connect(t.get("id"))
@@ -755,7 +755,7 @@ class CDPClient:
                     pass
 
         # Fallback to /json targets inspection
-        targets = self.list_targets()
+        targets = await self.list_targets_async()
         ext_map = {}
         for t in targets:
             url = t.get("url", "")
@@ -1167,6 +1167,15 @@ class CDPClient:
                 except Exception:
                     pass
         return {"closed_count": len(closed), "closed_tabs": closed}
+
+    async def cleanup_tabs_async(
+        self,
+        keep_current: bool = True,
+        close_blank: bool = True,
+        url_patterns: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Asynchronously close stale, blank, or pattern-matching tabs without blocking the event loop."""
+        return await asyncio.to_thread(self.cleanup_tabs, keep_current, close_blank, url_patterns)
 
     # Performance & Memory Metrics
     async def get_performance_metrics(self) -> Dict[str, Any]:

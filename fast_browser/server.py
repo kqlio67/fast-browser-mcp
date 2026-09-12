@@ -872,7 +872,7 @@ class MCPServer:
 
     async def handle_call(self, name: str, args: Dict[str, Any]) -> str:
         if name == "browser_list_tabs":
-            targets = self.cdp.list_targets()
+            targets = await self.cdp.list_targets_async()
             pages = [
                 {"id": t.get("id"), "title": t.get("title"), "url": t.get("url")}
                 for t in targets if t.get("type") == "page"
@@ -882,8 +882,10 @@ class MCPServer:
         elif name == "browser_select_tab":
             query = args.get("query")
             await self.cdp.connect(query)
-            target = self.cdp.find_target(query)
-            return f"Connected to tab: {target.get('title')} ({target.get('url')})"
+            target = await self.cdp.find_target_async(query)
+            title = target.get('title') if target else query
+            url = target.get('url') if target else ''
+            return f"Connected to tab: {title} ({url})"
 
         elif name == "browser_new_tab":
             url = args.get("url", "about:blank")
@@ -1110,16 +1112,17 @@ class MCPServer:
             return json.dumps(res, ensure_ascii=False, indent=2)
 
         elif name == "browser_system_info":
-            ver = self.cdp.get_browser_version()
+            ver = await self.cdp.get_browser_version_async()
             metrics = {}
             try:
                 metrics = await self.cdp.get_performance_metrics()
             except Exception:
                 pass
+            targets = await self.cdp.list_targets_async()
             info = {
                 "browser_version": ver,
                 "metrics": metrics,
-                "targets_count": len(self.cdp.list_targets())
+                "targets_count": len(targets)
             }
             return json.dumps(info, ensure_ascii=False, indent=2)
 
@@ -1235,7 +1238,7 @@ class MCPServer:
             return json.dumps(res, indent=2)
 
         elif name == "browser_cleanup_tabs":
-            res = self.cdp.cleanup_tabs(
+            res = await self.cdp.cleanup_tabs_async(
                 keep_current=args.get("keep_current", True),
                 close_blank=args.get("close_blank", True),
                 url_patterns=args.get("url_patterns")
