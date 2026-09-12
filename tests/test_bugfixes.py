@@ -9,7 +9,7 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestV10Bugfixes(BaseBrowserTest):
+class TestBugfixes(BaseBrowserTest):
     def test_batch_block_urls_and_system_info(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)

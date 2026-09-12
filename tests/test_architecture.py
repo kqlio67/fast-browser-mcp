@@ -7,7 +7,7 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestV9ResilienceArchitecture(BaseBrowserTest):
+class TestArchitecture(BaseBrowserTest):
     def test_async_non_blocking_cdp_methods(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)

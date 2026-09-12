@@ -6,7 +6,7 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestV8DevTools(BaseBrowserTest):
+class TestDevTools(BaseBrowserTest):
 
     def test_send_cdp_raw(self):
         async def run():

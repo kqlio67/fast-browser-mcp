@@ -6,7 +6,7 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestV6Superpowers(BaseBrowserTest):
+class TestSuperpowers(BaseBrowserTest):
 
     def test_navigation_history(self):
         async def run():

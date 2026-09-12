@@ -7,7 +7,7 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestV7Resilience(BaseBrowserTest):
+class TestResilience(BaseBrowserTest):
 
     def test_element_stability_and_autowait(self):
         async def run():
