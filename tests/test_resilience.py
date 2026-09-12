@@ -117,7 +117,7 @@ class TestResilience(BaseBrowserTest):
             self.assertIn("closed_tabs", res)
         asyncio.run(run())
 
-    def test_batch_v7_actions(self):
+    def test_batch_resilience_actions(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
             batch = BatchRunner(self.cdp)

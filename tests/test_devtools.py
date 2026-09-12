@@ -71,7 +71,7 @@ class TestDevTools(BaseBrowserTest):
             await self.cdp.close()
         asyncio.run(run())
 
-    def test_batch_v8_actions(self):
+    def test_batch_devtools_actions(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
             await self.cdp.evaluate("""(() => {

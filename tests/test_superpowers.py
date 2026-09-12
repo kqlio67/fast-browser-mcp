@@ -90,7 +90,7 @@ class TestSuperpowers(BaseBrowserTest):
             await self.cdp.close()
         asyncio.run(run())
 
-    def test_batch_v6_actions(self):
+    def test_batch_superpowers_actions(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
             batch = BatchRunner(self.cdp)
