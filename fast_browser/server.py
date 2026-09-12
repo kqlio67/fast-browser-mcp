@@ -2,6 +2,7 @@ import sys
 import json
 import asyncio
 import logging
+import base64
 from typing import Dict, Any, Optional
 
 from .cdp import CDPClient
@@ -94,7 +95,7 @@ TOOLS = [
     },
     {
         "name": "browser_batch",
-        "description": "ULTRA-FAST MULTI-ACTION BATCH EXECUTION: Execute a sequence of browser actions in a single round-trip without model latency. Supports: 'navigate', 'click' (by ref @1 or selector), 'fill' (by ref @1 or selector), 'press_key' (Enter, Escape, Tab, etc.), 'scroll' (by delta or to ref), 'select_option' (by value or text), 'hover', 'wait' (ms/selector/text), 'eval', 'extract', 'snapshot', 'screenshot', 'reload', 'set_viewport', 'get_storage', 'export_traffic', 'console_logs', 'upload_file'.",
+        "description": "ULTRA-FAST MULTI-ACTION BATCH EXECUTION: Execute a sequence of browser actions in a single round-trip without model latency. Supports: 'navigate', 'click', 'double_click', 'right_click', 'drag_and_drop', 'mouse_move', 'fill', 'press_key', 'scroll', 'select_option', 'hover', 'wait', 'eval', 'extract', 'snapshot', 'screenshot' (with full_page and clip selector support), 'pdf', 'get_html', 'set_viewport', 'set_user_agent', 'set_headers', 'block_urls', 'set_geolocation', 'set_timezone', 'get_storage', 'clear_cache', 'clear_cookies', 'set_cookie', 'export_traffic', 'console_logs', 'upload_file'.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -120,6 +121,7 @@ TOOLS = [
                             "width": {"type": "integer"},
                             "height": {"type": "integer"},
                             "mobile": {"type": "boolean"},
+                            "full_page": {"type": "boolean"},
                             "files": {"type": "array", "items": {"type": "string"}}
                         },
                         "required": ["action"]
@@ -190,6 +192,118 @@ TOOLS = [
                 "delta_x": {"type": "integer", "default": 0, "description": "Horizontal scroll delta"},
                 "ref": {"type": "string", "description": "Element reference to scroll into view (@1, @2...)"},
                 "selector": {"type": "string", "description": "CSS selector to scroll into view"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_mouse",
+        "description": "Advanced mouse operations: right-click, double-click, move, or drag-and-drop.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["right_click", "double_click", "move", "drag_and_drop"]},
+                "ref": {"type": "string", "description": "Target element ref (@1, @2) for click/dblclick/right-click"},
+                "selector": {"type": "string", "description": "Target CSS selector"},
+                "from_ref": {"type": "string", "description": "Source element ref for drag_and_drop"},
+                "to_ref": {"type": "string", "description": "Target element ref for drag_and_drop"},
+                "x": {"type": "number"},
+                "y": {"type": "number"}
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "browser_get_html",
+        "description": "Extract full outerHTML of the entire document or save to file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "save_path": {"type": "string", "description": "Optional file path to save HTML"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_print_to_pdf",
+        "description": "Print the current page to a PDF file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "save_path": {"type": "string", "default": "page.pdf", "description": "File path to save PDF"},
+                "landscape": {"type": "boolean", "default": False}
+            },
+            "required": ["save_path"]
+        }
+    },
+    {
+        "name": "browser_set_headers",
+        "description": "Inject custom HTTP headers into all outgoing requests from the browser.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "headers": {"type": "object", "description": "Key-value map of HTTP headers"}
+            },
+            "required": ["headers"]
+        }
+    },
+    {
+        "name": "browser_set_user_agent",
+        "description": "Override User-Agent string for the browser tab.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user_agent": {"type": "string", "description": "New User-Agent string"}
+            },
+            "required": ["user_agent"]
+        }
+    },
+    {
+        "name": "browser_block_urls",
+        "description": "Block specific URL patterns (e.g. *.png, *analytics*, *ads*) to speed up page loading.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "patterns": {"type": "array", "items": {"type": "string"}, "description": "Wildcard URL patterns to block"}
+            },
+            "required": ["patterns"]
+        }
+    },
+    {
+        "name": "browser_set_cookie",
+        "description": "Set a cookie in the browser.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "value": {"type": "string"},
+                "domain": {"type": "string"},
+                "path": {"type": "string", "default": "/"}
+            },
+            "required": ["name", "value"]
+        }
+    },
+    {
+        "name": "browser_clear_storage",
+        "description": "Clear browser cache and/or cookies.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "clear_cache": {"type": "boolean", "default": True},
+                "clear_cookies": {"type": "boolean", "default": True}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_emulate_environment",
+        "description": "Emulate geolocation coordinates and/or timezone.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "latitude": {"type": "number"},
+                "longitude": {"type": "number"},
+                "timezone_id": {"type": "string", "description": "e.g. 'Europe/Kyiv', 'America/New_York'"}
             },
             "required": []
         }
@@ -346,11 +460,13 @@ TOOLS = [
     },
     {
         "name": "browser_screenshot",
-        "description": "Capture screenshot of current page.",
+        "description": "Capture screenshot of current page, entire scrollable page, or a specific element.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "save_path": {"type": "string", "description": "Optional file path to save screenshot"}
+                "save_path": {"type": "string", "description": "Optional file path to save screenshot"},
+                "full_page": {"type": "boolean", "default": False, "description": "Capture full scrollable page"},
+                "selector": {"type": "string", "description": "CSS selector to capture only this element"}
             },
             "required": []
         }
@@ -439,6 +555,66 @@ class MCPServer:
             res = await self.batch.execute(steps)
             return json.dumps(res, ensure_ascii=False)
 
+        elif name == "browser_mouse":
+            action = args.get("action")
+            step = {"action": action, **args}
+            res = await self.batch.execute([step])
+            return json.dumps(res, ensure_ascii=False)
+
+        elif name == "browser_get_html":
+            path = args.get("save_path")
+            html = await self.cdp.get_html()
+            if path:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(html)
+                return f"HTML saved to {path} ({len(html)} chars)"
+            return html[:20000]
+
+        elif name == "browser_print_to_pdf":
+            path = args.get("save_path", "page.pdf")
+            b64 = await self.cdp.print_to_pdf(landscape=args.get("landscape", False))
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(b64))
+            return f"PDF saved successfully to {path}"
+
+        elif name == "browser_set_headers":
+            headers = args.get("headers", {})
+            await self.cdp.set_extra_headers(headers)
+            return f"Injected {len(headers)} custom headers"
+
+        elif name == "browser_set_user_agent":
+            ua = args.get("user_agent", "")
+            await self.cdp.set_user_agent(ua)
+            return f"User-Agent updated to {ua!r}"
+
+        elif name == "browser_block_urls":
+            patterns = args.get("patterns", [])
+            await self.cdp.block_urls(patterns)
+            return f"Blocked {len(patterns)} URL patterns"
+
+        elif name == "browser_set_cookie":
+            res = await self.cdp.set_cookie(
+                name=args["name"],
+                value=args["value"],
+                domain=args.get("domain"),
+                path=args.get("path", "/")
+            )
+            return "Cookie set successfully" if res else "Failed to set cookie"
+
+        elif name == "browser_clear_storage":
+            if args.get("clear_cache", True):
+                await self.cdp.clear_cache()
+            if args.get("clear_cookies", True):
+                await self.cdp.clear_cookies()
+            return "Storage/cache cleared successfully"
+
+        elif name == "browser_emulate_environment":
+            if "latitude" in args and "longitude" in args:
+                await self.cdp.set_geolocation(args["latitude"], args["longitude"])
+            if "timezone_id" in args:
+                await self.cdp.set_timezone(args["timezone_id"])
+            return "Environment emulated successfully"
+
         elif name == "browser_console_logs":
             log_type = args.get("log_type")
             limit = args.get("limit", 30)
@@ -507,7 +683,9 @@ class MCPServer:
 
         elif name == "browser_screenshot":
             path = args.get("save_path")
-            steps = [{"action": "screenshot", "save_path": path}]
+            full_page = args.get("full_page", False)
+            selector = args.get("selector")
+            steps = [{"action": "screenshot", "save_path": path, "full_page": full_page, "selector": selector}]
             res = await self.batch.execute(steps)
             return json.dumps(res, ensure_ascii=False)
 
@@ -553,7 +731,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.3.0"
+                                "version": "0.4.0"
                             }
                         }
                     }

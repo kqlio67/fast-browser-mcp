@@ -58,6 +58,90 @@ class BatchRunner:
                         raise ValueError("Click action requires 'ref' or 'selector'")
                     step_res["status"] = "ok"
 
+                elif action == "double_click":
+                    ref = step.get("ref")
+                    selector = step.get("selector")
+                    x = step.get("x")
+                    y = step.get("y")
+                    if ref or selector:
+                        js = f"""(() => {{
+                            const el = {f'window.__fb_refs[{int(str(ref).replace("@", ""))}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            if (!el) return null;
+                            const r = el.getBoundingClientRect();
+                            return {{x: r.x + r.width/2, y: r.y + r.height/2}};
+                        }})()"""
+                        coords = await self.cdp.evaluate(js)
+                        if not coords:
+                            raise RuntimeError("Element not found for double_click")
+                        x, y = coords["x"], coords["y"]
+                    if x is None or y is None:
+                        raise ValueError("double_click requires (x, y) or ref/selector")
+                    await self.cdp.double_click(x, y)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Double clicked at ({x}, {y})"
+
+                elif action == "right_click":
+                    ref = step.get("ref")
+                    selector = step.get("selector")
+                    x = step.get("x")
+                    y = step.get("y")
+                    if ref or selector:
+                        js = f"""(() => {{
+                            const el = {f'window.__fb_refs[{int(str(ref).replace("@", ""))}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            if (!el) return null;
+                            const r = el.getBoundingClientRect();
+                            return {{x: r.x + r.width/2, y: r.y + r.height/2}};
+                        }})()"""
+                        coords = await self.cdp.evaluate(js)
+                        if not coords:
+                            raise RuntimeError("Element not found for right_click")
+                        x, y = coords["x"], coords["y"]
+                    if x is None or y is None:
+                        raise ValueError("right_click requires (x, y) or ref/selector")
+                    await self.cdp.right_click(x, y)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Right clicked at ({x}, {y})"
+
+                elif action == "mouse_move":
+                    x = step.get("x", 0)
+                    y = step.get("y", 0)
+                    await self.cdp.mouse_move(x, y)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Moved mouse to ({x}, {y})"
+
+                elif action == "drag_and_drop":
+                    start_x = step.get("start_x")
+                    start_y = step.get("start_y")
+                    end_x = step.get("end_x")
+                    end_y = step.get("end_y")
+                    from_ref = step.get("from_ref")
+                    to_ref = step.get("to_ref")
+
+                    if from_ref and to_ref:
+                        js = f"""(() => {{
+                            const el1 = window.__fb_refs && window.__fb_refs[{int(str(from_ref).replace("@", ""))}];
+                            const el2 = window.__fb_refs && window.__fb_refs[{int(str(to_ref).replace("@", ""))}];
+                            if (!el1 || !el2) return null;
+                            const r1 = el1.getBoundingClientRect();
+                            const r2 = el2.getBoundingClientRect();
+                            return {{
+                                start_x: r1.x + r1.width/2, start_y: r1.y + r1.height/2,
+                                end_x: r2.x + r2.width/2, end_y: r2.y + r2.height/2
+                            }};
+                        }})()"""
+                        coords = await self.cdp.evaluate(js)
+                        if not coords:
+                            raise RuntimeError("Elements not found for drag_and_drop")
+                        start_x, start_y = coords["start_x"], coords["start_y"]
+                        end_x, end_y = coords["end_x"], coords["end_y"]
+
+                    if any(v is None for v in [start_x, start_y, end_x, end_y]):
+                        raise ValueError("drag_and_drop requires coordinates or from_ref/to_ref")
+
+                    await self.cdp.drag_and_drop(start_x, start_y, end_x, end_y)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+
                 elif action == "fill":
                     ref = step.get("ref")
                     selector = step.get("selector")
@@ -195,6 +279,54 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Viewport set to {w}x{h} (mobile={mobile})"
 
+                elif action == "set_user_agent":
+                    ua = step.get("user_agent", "")
+                    await self.cdp.set_user_agent(ua)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"User-Agent set to {ua!r}"
+
+                elif action == "set_headers":
+                    headers = step.get("headers", {})
+                    await self.cdp.set_extra_headers(headers)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Injected {len(headers)} custom headers"
+
+                elif action == "block_urls":
+                    urls = step.get("urls", [])
+                    await self.cdp.block_urls(urls)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Blocked {len(urls)} URL patterns"
+
+                elif action == "set_geolocation":
+                    lat = step.get("latitude", 0.0)
+                    lon = step.get("longitude", 0.0)
+                    await self.cdp.set_geolocation(lat, lon)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Geolocation set to ({lat}, {lon})"
+
+                elif action == "set_timezone":
+                    tz = step.get("timezone", "UTC")
+                    await self.cdp.set_timezone(tz)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Timezone set to {tz}"
+
+                elif action == "clear_cache":
+                    await self.cdp.clear_cache()
+                    step_res["status"] = "ok"
+                    step_res["detail"] = "Cleared browser cache"
+
+                elif action == "clear_cookies":
+                    await self.cdp.clear_cookies()
+                    step_res["status"] = "ok"
+                    step_res["detail"] = "Cleared browser cookies"
+
+                elif action == "set_cookie":
+                    name = step.get("name")
+                    val = step.get("value")
+                    await self.cdp.set_cookie(name, val, domain=step.get("domain"), path=step.get("path", "/"))
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Set cookie {name}={val}"
+
                 elif action == "upload_file":
                     selector = step.get("selector")
                     files = step.get("files", [])
@@ -203,6 +335,25 @@ class BatchRunner:
                     await self.cdp.upload_file(selector, files)
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Uploaded {len(files)} files to '{selector}'"
+
+                elif action == "get_html":
+                    html = await self.cdp.get_html()
+                    step_res["status"] = "ok"
+                    path = step.get("save_path")
+                    if path:
+                        with open(path, "w", encoding="utf-8") as f:
+                            f.write(html)
+                        step_res["detail"] = f"HTML saved to {path} ({len(html)} chars)"
+                    else:
+                        step_res["html"] = html[:10000]
+
+                elif action == "pdf":
+                    path = step.get("save_path", "page.pdf")
+                    b64 = await self.cdp.print_to_pdf(landscape=step.get("landscape", False))
+                    with open(path, "wb") as f:
+                        f.write(base64.b64decode(b64))
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"PDF saved to {path}"
 
                 elif action == "get_storage":
                     data = await self.cdp.get_storage()
@@ -281,12 +432,14 @@ class BatchRunner:
                     step_res["ws_frames"] = frames
 
                 elif action == "screenshot":
-                    data_b64 = await self.cdp.capture_screenshot()
+                    full_page = step.get("full_page", False)
+                    clip_selector = step.get("selector")
+                    data_b64 = await self.cdp.capture_screenshot(full_page=full_page, clip_selector=clip_selector)
                     path = step.get("save_path")
                     if path:
                         with open(path, "wb") as f:
                             f.write(base64.b64decode(data_b64))
-                        step_res["detail"] = f"Screenshot saved to {path}"
+                        step_res["detail"] = f"Screenshot saved to {path} (full_page={full_page})"
                     else:
                         step_res["detail"] = f"Screenshot captured ({len(data_b64)} b64 bytes)"
                     step_res["status"] = "ok"

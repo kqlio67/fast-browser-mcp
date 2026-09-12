@@ -80,7 +80,7 @@ class CDPClient:
         self._ws = await websockets.connect(self.ws_url, max_size=50 * 1024 * 1024)
         self._listen_task = asyncio.create_task(self._listen_loop())
 
-        # Enable necessary domains
+        # Enable core domains
         await self.send("Page.enable")
         await self.send("Runtime.enable")
         await self.send("DOM.enable")
@@ -242,13 +242,41 @@ class CDPClient:
             raise RuntimeError(f"Element '{selector}' not found for click within {timeout_ms}ms")
         return await self.evaluate(js)
 
+    async def double_click(self, x: float, y: float) -> bool:
+        for _ in range(2):
+            await self.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 2})
+            await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 2})
+        return True
+
+    async def right_click(self, x: float, y: float) -> bool:
+        await self.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "right", "clickCount": 1})
+        await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "right", "clickCount": 1})
+        return True
+
+    async def mouse_move(self, x: float, y: float) -> bool:
+        await self.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        return True
+
+    async def drag_and_drop(self, start_x: float, start_y: float, end_x: float, end_y: float, steps: int = 10) -> bool:
+        await self.mouse_move(start_x, start_y)
+        await self.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1})
+        for i in range(1, steps + 1):
+            curr_x = start_x + (end_x - start_x) * (i / steps)
+            curr_y = start_y + (end_y - start_y) * (i / steps)
+            await self.mouse_move(curr_x, curr_y)
+            await asyncio.sleep(0.02)
+        await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1})
+        return True
+
     async def fill(self, selector: str, text: str, clear: bool = True, timeout_ms: int = 3000) -> bool:
         js = f"""(() => {{
             const el = document.querySelector({json.dumps(selector)});
             if (!el) return false;
             el.scrollIntoView({{block: 'center', inline: 'center'}});
             el.focus();
-            if ({json.dumps(clear)}) el.value = '';
+            if ({json.dumps(clear)}) {{
+                el.value = '';
+            }}
             el.value = {json.dumps(text)};
             el.dispatchEvent(new Event('input', {{ bubbles: true }}));
             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
@@ -338,6 +366,30 @@ class CDPClient:
         await self.send("Emulation.setDeviceMetricsOverride", params)
         return True
 
+    async def set_geolocation(self, latitude: float, longitude: float, accuracy: float = 100.0) -> bool:
+        await self.send("Emulation.setGeolocationOverride", {
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy": accuracy
+        })
+        return True
+
+    async def set_timezone(self, timezone_id: str) -> bool:
+        await self.send("Emulation.setTimezoneOverride", {"timezoneId": timezone_id})
+        return True
+
+    async def set_user_agent(self, user_agent: str) -> bool:
+        await self.send("Network.setUserAgentOverride", {"userAgent": user_agent})
+        return True
+
+    async def set_extra_headers(self, headers: Dict[str, str]) -> bool:
+        await self.send("Network.setExtraHTTPHeaders", {"headers": headers})
+        return True
+
+    async def block_urls(self, patterns: List[str]) -> bool:
+        await self.send("Network.setBlockedURLs", {"urls": patterns})
+        return True
+
     async def upload_file(self, selector: str, files: List[str]) -> bool:
         doc = await self.send("DOM.getDocument")
         node_res = await self.send("DOM.querySelector", {"nodeId": doc["root"]["nodeId"], "selector": selector})
@@ -346,6 +398,40 @@ class CDPClient:
             raise RuntimeError(f"File input '{selector}' not found in DOM")
         await self.send("DOM.setFileInputFiles", {"files": files, "nodeId": node_id})
         return True
+
+    async def get_html(self) -> str:
+        return await self.evaluate("document.documentElement.outerHTML")
+
+    async def print_to_pdf(self, landscape: bool = False, print_background: bool = True) -> str:
+        res = await self.send("Page.printToPDF", {
+            "landscape": landscape,
+            "printBackground": print_background
+        })
+        return res.get("data", "")
+
+    async def clear_cache(self) -> bool:
+        await self.send("Network.clearBrowserCache")
+        return True
+
+    async def clear_cookies(self) -> bool:
+        await self.send("Network.clearBrowserCookies")
+        return True
+
+    async def set_cookie(self, name: str, value: str, domain: Optional[str] = None, path: str = "/", secure: bool = False, http_only: bool = False) -> bool:
+        params = {
+            "name": name,
+            "value": value,
+            "path": path,
+            "secure": secure,
+            "httpOnly": http_only
+        }
+        if domain:
+            params["domain"] = domain
+        else:
+            url = await self.evaluate("window.location.href")
+            params["url"] = url
+        res = await self.send("Network.setCookie", params)
+        return res.get("success", False)
 
     async def get_response_body(self, request_id: str) -> Dict[str, Any]:
         try:
@@ -362,9 +448,30 @@ class CDPClient:
         res = await self.send("Network.getCookies", params)
         return res.get("cookies", [])
 
-    async def capture_screenshot(self, format: str = "png", quality: Optional[int] = None) -> str:
+    async def capture_screenshot(self, format: str = "png", quality: Optional[int] = None, full_page: bool = False, clip_selector: Optional[str] = None) -> str:
         params: Dict[str, Any] = {"format": format}
         if quality is not None:
             params["quality"] = quality
+
+        if full_page:
+            params["captureBeyondViewport"] = True
+            # Get full dimensions
+            metrics = await self.send("Page.getLayoutMetrics")
+            content_size = metrics.get("contentSize", {})
+            width = content_size.get("width")
+            height = content_size.get("height")
+            if width and height:
+                params["clip"] = {"x": 0, "y": 0, "width": width, "height": height, "scale": 1}
+
+        elif clip_selector:
+            rect = await self.evaluate(f"""(() => {{
+                const el = document.querySelector({json.dumps(clip_selector)});
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return {{x: r.x, y: r.y, width: r.width, height: r.height, scale: 1}};
+            }})()""")
+            if rect and rect.get("width") > 0 and rect.get("height") > 0:
+                params["clip"] = rect
+
         res = await self.send("Page.captureScreenshot", params)
         return res.get("data", "")

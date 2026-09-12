@@ -2,6 +2,7 @@ import sys
 import json
 import asyncio
 import argparse
+import base64
 from typing import Optional
 
 from .cdp import CDPClient
@@ -34,6 +35,15 @@ async def run_cli():
     # snapshot
     subparsers.add_parser("snapshot", help="Take a token-efficient numbered snapshot of page elements")
 
+    # html
+    html_p = subparsers.add_parser("html", help="Extract full HTML of page")
+    html_p.add_argument("--out", help="Optional output file path")
+
+    # pdf
+    pdf_p = subparsers.add_parser("pdf", help="Print page to PDF")
+    pdf_p.add_argument("--out", default="page.pdf", help="Output PDF file path")
+    pdf_p.add_argument("--landscape", action="store_true", help="Landscape orientation")
+
     # eval
     eval_p = subparsers.add_parser("eval", help="Evaluate JavaScript expression")
     eval_p.add_argument("script", help="JavaScript code to evaluate")
@@ -62,6 +72,16 @@ async def run_cli():
     scroll_p.add_argument("--delta-y", type=int, default=400, help="Vertical scroll pixels")
     scroll_p.add_argument("--ref", help="Element reference to scroll to")
     scroll_p.add_argument("--selector", help="CSS selector to scroll to")
+
+    # mouse
+    mouse_p = subparsers.add_parser("mouse", help="Mouse actions")
+    mouse_p.add_argument("action", choices=["right_click", "double_click", "move", "drag_and_drop"])
+    mouse_p.add_argument("--x", type=float)
+    mouse_p.add_argument("--y", type=float)
+    mouse_p.add_argument("--from-ref")
+    mouse_p.add_argument("--to-ref")
+    mouse_p.add_argument("--ref")
+    mouse_p.add_argument("--selector")
 
     # console
     console_p = subparsers.add_parser("console", help="View captured JavaScript console logs")
@@ -104,9 +124,23 @@ async def run_cli():
     # cookies
     subparsers.add_parser("cookies", help="List cookies for tab")
 
+    # set-cookie
+    sc_p = subparsers.add_parser("set-cookie", help="Set cookie")
+    sc_p.add_argument("name", help="Cookie name")
+    sc_p.add_argument("value", help="Cookie value")
+    sc_p.add_argument("--domain", help="Cookie domain")
+    sc_p.add_argument("--path", default="/", help="Cookie path")
+
+    # clear
+    clear_p = subparsers.add_parser("clear", help="Clear cache and/or cookies")
+    clear_p.add_argument("--no-cache", action="store_true")
+    clear_p.add_argument("--no-cookies", action="store_true")
+
     # screenshot
     ss_p = subparsers.add_parser("screenshot", help="Capture screenshot")
     ss_p.add_argument("--out", default="screenshot.png", help="Output file path")
+    ss_p.add_argument("--full-page", action="store_true", help="Capture entire scrollable page")
+    ss_p.add_argument("--selector", help="Capture specific element")
 
     args = parser.parse_args()
 
@@ -141,6 +175,21 @@ async def run_cli():
     elif args.command == "snapshot":
         snap = PageSnapshot(cdp)
         print(await snap.capture_formatted())
+
+    elif args.command == "html":
+        html = await cdp.get_html()
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"HTML saved to {args.out} ({len(html)} chars)")
+        else:
+            print(html[:5000])
+
+    elif args.command == "pdf":
+        b64 = await cdp.print_to_pdf(landscape=args.landscape)
+        with open(args.out, "wb") as f:
+            f.write(base64.b64decode(b64))
+        print(f"PDF saved to {args.out}")
 
     elif args.command == "eval":
         res = await cdp.evaluate(args.script)
@@ -183,6 +232,17 @@ async def run_cli():
         res = await batch.execute([{"action": "scroll", "delta_y": args.delta_y, "ref": args.ref, "selector": args.selector}])
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
+    elif args.command == "mouse":
+        step = {
+            "action": args.action,
+            "x": args.x, "y": args.y,
+            "ref": args.ref, "selector": args.selector,
+            "from_ref": args.from_ref, "to_ref": args.to_ref
+        }
+        batch = BatchRunner(cdp)
+        res = await batch.execute([step])
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
     elif args.command == "console":
         logs = cdp.console.list_logs(log_type=args.type, limit=args.limit)
         print(json.dumps(logs, ensure_ascii=False, indent=2))
@@ -220,9 +280,25 @@ async def run_cli():
         cookies = await cdp.get_cookies()
         print(json.dumps(cookies, ensure_ascii=False, indent=2))
 
+    elif args.command == "set-cookie":
+        res = await cdp.set_cookie(args.name, args.value, domain=args.domain, path=args.path)
+        print("Cookie set successfully" if res else "Failed to set cookie")
+
+    elif args.command == "clear":
+        if not args.no_cache:
+            await cdp.clear_cache()
+        if not args.no_cookies:
+            await cdp.clear_cookies()
+        print("Cleared cache and/or cookies")
+
     elif args.command == "screenshot":
         batch = BatchRunner(cdp)
-        res = await batch.execute([{"action": "screenshot", "save_path": args.out}])
+        res = await batch.execute([{
+            "action": "screenshot",
+            "save_path": args.out,
+            "full_page": args.full_page,
+            "selector": args.selector
+        }])
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     await cdp.close()
