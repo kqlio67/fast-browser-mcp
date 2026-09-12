@@ -187,6 +187,40 @@ class BatchRunner:
                         raise ValueError("Hover action requires 'ref' or 'selector'")
                     step_res["status"] = "ok"
 
+                elif action == "set_viewport":
+                    w = step.get("width", 1280)
+                    h = step.get("height", 800)
+                    mobile = step.get("mobile", False)
+                    await self.cdp.set_viewport(width=w, height=h, mobile=mobile)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Viewport set to {w}x{h} (mobile={mobile})"
+
+                elif action == "upload_file":
+                    selector = step.get("selector")
+                    files = step.get("files", [])
+                    if not selector or not files:
+                        raise ValueError("upload_file requires 'selector' and 'files'")
+                    await self.cdp.upload_file(selector, files)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Uploaded {len(files)} files to '{selector}'"
+
+                elif action == "get_storage":
+                    data = await self.cdp.get_storage()
+                    step_res["status"] = "ok"
+                    step_res["storage"] = data
+
+                elif action == "export_traffic":
+                    path = step.get("save_path", "traffic_export.json")
+                    self.cdp.network.export_to_file(path)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Traffic exported to {path}"
+
+                elif action == "console_logs":
+                    limit = step.get("limit", 20)
+                    logs = self.cdp.console.list_logs(limit=limit)
+                    step_res["status"] = "ok"
+                    step_res["console_logs"] = logs
+
                 elif action == "wait":
                     ms = step.get("ms")
                     selector = step.get("selector")

@@ -8,7 +8,6 @@ from .cdp import CDPClient
 from .snapshot import PageSnapshot
 from .batch import BatchRunner
 
-# Configure logger to write to stderr so stdout remains clean for JSON-RPC
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -86,7 +85,7 @@ TOOLS = [
     },
     {
         "name": "browser_snapshot",
-        "description": "Capture a compact, token-efficient snapshot of the active page showing all interactive elements with numbered references (@1, @2, ...), smart labels (including icons/images), and headings.",
+        "description": "Capture a compact, token-efficient snapshot of the active page showing all interactive elements with numbered references (@1, @2, ...), smart labels (including icons/images/CSS backgrounds), headings, and accessible iframes.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -95,29 +94,33 @@ TOOLS = [
     },
     {
         "name": "browser_batch",
-        "description": "ULTRA-FAST MULTI-ACTION BATCH EXECUTION: Execute a sequence of browser actions in a single round-trip without model latency. Supports: 'navigate', 'click' (by ref @1 or selector), 'fill' (by ref @1 or selector), 'press_key' (Enter, Escape, Tab, etc.), 'scroll' (by delta or to ref), 'select_option' (by value or text), 'hover', 'wait' (ms/selector/text), 'eval', 'extract', 'snapshot', 'screenshot', 'reload'.",
+        "description": "ULTRA-FAST MULTI-ACTION BATCH EXECUTION: Execute a sequence of browser actions in a single round-trip without model latency. Supports: 'navigate', 'click' (by ref @1 or selector), 'fill' (by ref @1 or selector), 'press_key' (Enter, Escape, Tab, etc.), 'scroll' (by delta or to ref), 'select_option' (by value or text), 'hover', 'wait' (ms/selector/text), 'eval', 'extract', 'snapshot', 'screenshot', 'reload', 'set_viewport', 'get_storage', 'export_traffic', 'console_logs', 'upload_file'.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "steps": {
                     "type": "array",
-                    "description": "List of action objects, e.g. [{\"action\": \"click\", \"ref\": \"@1\"}, {\"action\": \"wait\", \"ms\": 300}, {\"action\": \"snapshot\"}]",
+                    "description": "List of action objects",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "action": {"type": "string", "enum": ["navigate", "click", "fill", "press_key", "scroll", "select_option", "hover", "wait", "eval", "extract", "snapshot", "screenshot", "reload"]},
+                            "action": {"type": "string"},
                             "url": {"type": "string"},
-                            "ref": {"type": "string", "description": "Element reference from snapshot, e.g. '@1', '@2'"},
-                            "selector": {"type": "string", "description": "CSS selector"},
-                            "text": {"type": "string", "description": "Text to fill or wait for"},
-                            "key": {"type": "string", "description": "Key name to press (Enter, Escape, Tab, Backspace, ArrowDown, etc.)"},
-                            "delta_y": {"type": "integer", "description": "Vertical scroll delta in pixels"},
-                            "value": {"type": "string", "description": "Option value for select_option"},
-                            "clear": {"type": "boolean", "description": "Clear input before filling (default: true)"},
-                            "ms": {"type": "integer", "description": "Milliseconds to wait"},
-                            "script": {"type": "string", "description": "JavaScript to evaluate"},
-                            "mode": {"type": "string", "enum": ["text", "html"]},
-                            "save_path": {"type": "string"}
+                            "ref": {"type": "string"},
+                            "selector": {"type": "string"},
+                            "text": {"type": "string"},
+                            "key": {"type": "string"},
+                            "delta_y": {"type": "integer"},
+                            "value": {"type": "string"},
+                            "clear": {"type": "boolean"},
+                            "ms": {"type": "integer"},
+                            "script": {"type": "string"},
+                            "mode": {"type": "string"},
+                            "save_path": {"type": "string"},
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"},
+                            "mobile": {"type": "boolean"},
+                            "files": {"type": "array", "items": {"type": "string"}}
                         },
                         "required": ["action"]
                     }
@@ -192,19 +195,81 @@ TOOLS = [
         }
     },
     {
-        "name": "browser_navigate",
-        "description": "Navigate active tab to a URL.",
+        "name": "browser_console_logs",
+        "description": "View captured JavaScript console logs (console.log, console.error, console.warn) and unhandled page exceptions.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "URL to navigate to"}
+                "log_type": {
+                    "type": "string",
+                    "description": "Filter by type: 'log', 'error', 'warning', 'info', or 'all'"
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Max log entries to return"
+                }
             },
-            "required": ["url"]
+            "required": []
+        }
+    },
+    {
+        "name": "browser_get_storage",
+        "description": "Inspect and dump all items from localStorage and sessionStorage for the current origin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_export_traffic",
+        "description": "Export all captured network requests, responses, headers, POST data, and WebSocket frames to a structured JSON file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "default": "traffic_dump.json",
+                    "description": "Absolute or relative file path to save traffic dump"
+                }
+            },
+            "required": ["file_path"]
+        }
+    },
+    {
+        "name": "browser_set_viewport",
+        "description": "Set browser viewport dimensions and mobile device emulation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "width": {"type": "integer", "default": 1280, "description": "Viewport width in pixels"},
+                "height": {"type": "integer", "default": 800, "description": "Viewport height in pixels"},
+                "mobile": {"type": "boolean", "default": False, "description": "Enable mobile emulation"},
+                "device_scale_factor": {"type": "number", "default": 1.0, "description": "Device scale factor (DPI)"}
+            },
+            "required": ["width", "height"]
+        }
+    },
+    {
+        "name": "browser_upload_file",
+        "description": "Upload one or more files to an <input type='file'> element via CDP.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector for the file input"},
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of absolute file paths to upload"
+                }
+            },
+            "required": ["selector", "files"]
         }
     },
     {
         "name": "browser_network_requests",
-        "description": "List captured HTTP/XHR/Fetch/WebSocket network requests for reverse engineering. Filter by type (XHR, Fetch, Document, Script, WebSocket) or URL pattern.",
+        "description": "List captured HTTP/XHR/Fetch/WebSocket network requests for reverse engineering. Filter by type or URL pattern.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -269,6 +334,17 @@ TOOLS = [
         }
     },
     {
+        "name": "browser_navigate",
+        "description": "Navigate active tab to a URL.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to navigate to"}
+            },
+            "required": ["url"]
+        }
+    },
+    {
         "name": "browser_screenshot",
         "description": "Capture screenshot of current page.",
         "inputSchema": {
@@ -316,7 +392,7 @@ class MCPServer:
             closed = await self.cdp.close_tab(target_id)
             return "Tab closed successfully" if closed else "Failed to close tab"
 
-        # For all page interaction tools, ensure connected
+        # Ensure connected for all page interactions
         await self.ensure_connected()
 
         if name == "browser_snapshot":
@@ -362,6 +438,35 @@ class MCPServer:
             steps = [{"action": "scroll", "delta_y": delta_y, "delta_x": delta_x, "ref": ref, "selector": selector}]
             res = await self.batch.execute(steps)
             return json.dumps(res, ensure_ascii=False)
+
+        elif name == "browser_console_logs":
+            log_type = args.get("log_type")
+            limit = args.get("limit", 30)
+            logs = self.cdp.console.list_logs(log_type=log_type, limit=limit)
+            return json.dumps(logs, ensure_ascii=False, indent=2)
+
+        elif name == "browser_get_storage":
+            data = await self.cdp.get_storage()
+            return json.dumps(data, ensure_ascii=False, indent=2)
+
+        elif name == "browser_export_traffic":
+            path = args.get("file_path", "traffic_dump.json")
+            self.cdp.network.export_to_file(path)
+            return f"Traffic dump exported successfully to {path}"
+
+        elif name == "browser_set_viewport":
+            w = args.get("width", 1280)
+            h = args.get("height", 800)
+            mob = args.get("mobile", False)
+            scale = args.get("device_scale_factor", 1.0)
+            await self.cdp.set_viewport(width=w, height=h, mobile=mob, device_scale_factor=scale)
+            return f"Viewport set to {w}x{h} (mobile={mob})"
+
+        elif name == "browser_upload_file":
+            selector = args.get("selector", "")
+            files = args.get("files", [])
+            await self.cdp.upload_file(selector, files)
+            return f"Uploaded {len(files)} files to {selector}"
 
         elif name == "browser_reload":
             ignore_cache = args.get("ignore_cache", False)
@@ -448,7 +553,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.2.0"
+                                "version": "0.3.0"
                             }
                         }
                     }

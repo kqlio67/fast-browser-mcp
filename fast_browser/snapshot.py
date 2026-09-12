@@ -23,15 +23,12 @@ SNAPSHOT_JS = """(() => {
     }
 
     function extractElementText(el) {
-        // Direct text
         let t = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
         if (t) return t;
 
-        // Attributes
         t = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt');
         if (t) return t.trim();
 
-        // Check child image
         const img = el.querySelector('img');
         if (img) {
             const imgAlt = img.getAttribute('alt');
@@ -44,7 +41,6 @@ SNAPSHOT_JS = """(() => {
             }
         }
 
-        // Check child svg
         const svg = el.querySelector('svg');
         if (svg) {
             const svgTitle = svg.querySelector('title');
@@ -54,7 +50,6 @@ SNAPSHOT_JS = """(() => {
             return 'icon:svg';
         }
 
-        // Check CSS background-image
         try {
             const style = window.getComputedStyle(el);
             const bg = style.backgroundImage;
@@ -68,7 +63,6 @@ SNAPSHOT_JS = """(() => {
             }
         } catch(e) {}
 
-        // Check meaningful class names as last resort
         if (el.className && typeof el.className === 'string') {
             const cls = el.className.trim();
             if (cls && cls.length < 50) return `cls:${cls}`;
@@ -77,7 +71,7 @@ SNAPSHOT_JS = """(() => {
         return '';
     }
 
-    function getElementDescriptor(el) {
+    function getElementDescriptor(el, framePrefix = '') {
         const tag = el.tagName.toLowerCase();
         let role = el.getAttribute('role') || tag;
         let text = extractElementText(el);
@@ -119,34 +113,46 @@ SNAPSHOT_JS = """(() => {
             tag: tag,
             role: role,
             inViewport: inVp,
-            desc: `@${id} [${role}]${extra}${vpFlag}`
+            desc: `@${id} ${framePrefix}[${role}]${extra}${vpFlag}`
         };
     }
 
-    // Collect interactive elements
     const interactiveSelectors = [
         'button', 'a[href]', 'a[onclick]', 'input', 'select', 'textarea',
         '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="tab"]',
         '[role="menuitem"]', '[onclick]', '[tabindex]:not([tabindex="-1"])'
     ];
 
-    const rawElements = Array.from(document.querySelectorAll(interactiveSelectors.join(',')))
-        .filter(isVisible);
+    function collectFromDoc(doc, framePrefix = '') {
+        const raw = Array.from(doc.querySelectorAll(interactiveSelectors.join(',')))
+            .filter(isVisible);
 
-    // Filter redundant parent/child matches if both have onclick
-    const elements = [];
-    for (let i = 0; i < rawElements.length; i++) {
-        const curr = rawElements[i];
-        // If curr is a div/table/tr and has a direct child button/input/a that is also interactive, prefer child
-        const hasInteractiveChild = rawElements.some(other => other !== curr && curr.contains(other) && ['button', 'a', 'input', 'select'].includes(other.tagName.toLowerCase()));
-        if (!hasInteractiveChild || ['button', 'a', 'input', 'select'].includes(curr.tagName.toLowerCase())) {
-            elements.push(curr);
+        const filtered = [];
+        for (let i = 0; i < raw.length; i++) {
+            const curr = raw[i];
+            const hasChild = raw.some(other => other !== curr && curr.contains(other) && ['button', 'a', 'input', 'select'].includes(other.tagName.toLowerCase()));
+            if (!hasChild || ['button', 'a', 'input', 'select'].includes(curr.tagName.toLowerCase())) {
+                filtered.push(curr);
+            }
         }
+        return filtered.map(el => getElementDescriptor(el, framePrefix));
     }
 
-    const descriptors = elements.map(getElementDescriptor);
+    let allDescriptors = collectFromDoc(document);
 
-    // Collect headings
+    // Recursively collect from accessible iframes
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+    iframes.forEach((iframe, idx) => {
+        try {
+            const iDoc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+            if (iDoc) {
+                const name = iframe.name || iframe.id || `frame_${idx+1}`;
+                const iframeDescriptors = collectFromDoc(iDoc, `(iframe:${name}) `);
+                allDescriptors = allDescriptors.concat(iframeDescriptors);
+            }
+        } catch(e) {}
+    });
+
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4'))
         .filter(isVisible)
         .map(h => `${h.tagName}: ${h.innerText.trim()}`);
@@ -155,8 +161,8 @@ SNAPSHOT_JS = """(() => {
         title: document.title,
         url: window.location.href,
         headings: headings,
-        interactive: descriptors.map(d => d.desc),
-        count: descriptors.length
+        interactive: allDescriptors.map(d => d.desc),
+        count: allDescriptors.length
     };
 })()"""
 

@@ -93,6 +93,11 @@ pip install websockets requests
 | `browser_press_key` | Натискання клавіші (`Enter`, `Escape`, `Tab` тощо) |
 | `browser_scroll` | Скролінг сторінки або скрол до конкретного `@ref` |
 | `browser_navigate` | Перехід за адресою |
+| `browser_console_logs` | **Логи консолі браузера (console.log, console.error, exceptions)** |
+| `browser_get_storage` | **Вивантаження localStorage та sessionStorage** |
+| `browser_export_traffic` | **Експорт усього перехопленого трафіку (HTTP + WebSockets) у JSON-файл** |
+| `browser_set_viewport` | **Емуляція розміру екрану (мобільний / десктоп) та DPI** |
+| `browser_upload_file` | **Нативне завантаження файлів у `<input type='file'>`** |
 | `browser_network_requests` | **Список перехоплених HTTP/XHR запитів (POST/GET/статус)** |
 | `browser_network_get_response` | **Тіло відповіді сервера (JSON/HTML) та деталі запиту** |
 | `browser_websocket_messages` | **WebSocket пакети гри в реальному часі (sent/received)** |

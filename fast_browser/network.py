@@ -1,6 +1,69 @@
 import time
+import json
 from typing import Dict, Any, List, Optional
 from collections import deque
+
+class ConsoleMonitor:
+    def __init__(self, max_logs: int = 500):
+        self.max_logs = max_logs
+        self.logs: deque = deque(maxlen=max_logs)
+
+    def handle_event(self, method: str, params: Dict[str, Any]):
+        t = time.strftime("%H:%M:%S")
+
+        if method == "Runtime.consoleAPICalled":
+            log_type = params.get("type", "log")  # log, error, warning, info, debug
+            args = params.get("args", [])
+            text_parts = []
+            for a in args:
+                val = a.get("value")
+                if val is not None:
+                    text_parts.append(str(val))
+                elif a.get("description"):
+                    text_parts.append(a.get("description"))
+                else:
+                    text_parts.append(str(a))
+            
+            text = " ".join(text_parts)
+            stack = params.get("stackTrace", {}).get("callFrames", [])
+            source = stack[0].get("url", "") if stack else ""
+            line = stack[0].get("lineNumber", "") if stack else ""
+
+            self.logs.append({
+                "timestamp": t,
+                "type": log_type,
+                "message": text[:2000],
+                "source": f"{source}:{line}" if source else ""
+            })
+
+        elif method == "Runtime.exceptionThrown":
+            exc = params.get("exceptionDetails", {})
+            text = exc.get("text", "")
+            desc = exc.get("exception", {}).get("description") or text
+            url = exc.get("url", "")
+            line = exc.get("lineNumber", "")
+
+            self.logs.append({
+                "timestamp": t,
+                "type": "error",
+                "message": desc[:2000],
+                "source": f"{url}:{line}" if url else ""
+            })
+
+    def list_logs(self, log_type: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        results = []
+        for log in reversed(self.logs):
+            if log_type and log_type.lower() != "all":
+                if log.get("type", "").lower() != log_type.lower():
+                    continue
+            results.append(log)
+            if len(results) >= limit:
+                break
+        return results
+
+    def clear(self):
+        self.logs.clear()
+
 
 class NetworkMonitor:
     def __init__(self, max_requests: int = 300, max_ws_frames: int = 500):
@@ -91,7 +154,6 @@ class NetworkMonitor:
             if url_pattern and url_pattern.lower() not in req.get("url", "").lower():
                 continue
             
-            # Return compact summary
             results.append({
                 "id": req["id"],
                 "time": req["timestamp"],
@@ -117,6 +179,20 @@ class NetworkMonitor:
             if len(results) >= limit:
                 break
         return results
+
+    def export_to_dict(self) -> Dict[str, Any]:
+        return {
+            "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "total_requests": len(self.requests),
+            "total_ws_frames": len(self.ws_frames),
+            "requests": list(self.requests.values()),
+            "websocket_frames": list(self.ws_frames)
+        }
+
+    def export_to_file(self, file_path: str):
+        data = self.export_to_dict()
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     def clear(self):
         self.requests.clear()

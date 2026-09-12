@@ -4,11 +4,10 @@ import logging
 import requests
 import websockets
 from typing import Dict, Any, Optional, List, Union
-from .network import NetworkMonitor
+from .network import NetworkMonitor, ConsoleMonitor
 
 logger = logging.getLogger("fast_browser.cdp")
 
-# Common key definitions for Input.dispatchKeyEvent
 KEY_DEFINITIONS = {
     "Enter": {"windowsVirtualKeyCode": 13, "code": "Enter", "key": "Enter", "text": "\r"},
     "Tab": {"windowsVirtualKeyCode": 9, "code": "Tab", "key": "Tab"},
@@ -36,6 +35,7 @@ class CDPClient:
         self.auto_accept_dialogs = True
         self.last_dialog_message: Optional[str] = None
         self.network = NetworkMonitor()
+        self.console = ConsoleMonitor()
 
     @property
     def is_connected(self) -> bool:
@@ -122,8 +122,12 @@ class CDPClient:
                 if method.startswith("Network."):
                     self.network.handle_event(method, params)
 
+                # Console logs monitor
+                elif method.startswith("Runtime.console") or method.startswith("Runtime.exception"):
+                    self.console.handle_event(method, params)
+
                 # Automatic Dialog handling (alert, confirm, prompt)
-                if method == "Page.javascriptDialogOpening":
+                elif method == "Page.javascriptDialogOpening":
                     self.last_dialog_message = params.get("message")
                     logger.warning(f"JavaScript dialog opened: {self.last_dialog_message!r} (type={params.get('type')})")
                     if self.auto_accept_dialogs:
@@ -185,8 +189,7 @@ class CDPClient:
     async def new_tab(self, url: str = "about:blank") -> Dict[str, Any]:
         res = requests.put(f"http://{self.host}:{self.port}/json/new?{url}", timeout=5)
         res.raise_for_status()
-        target = res.json()
-        return target
+        return res.json()
 
     async def close_tab(self, target_id: Optional[str] = None) -> bool:
         tid = target_id or self.target_id
@@ -245,9 +248,7 @@ class CDPClient:
             if (!el) return false;
             el.scrollIntoView({{block: 'center', inline: 'center'}});
             el.focus();
-            if ({json.dumps(clear)}) {{
-                el.value = '';
-            }}
+            if ({json.dumps(clear)}) el.value = '';
             el.value = {json.dumps(text)};
             el.dispatchEvent(new Event('input', {{ bubbles: true }}));
             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
@@ -261,7 +262,6 @@ class CDPClient:
     async def press_key(self, key: str) -> bool:
         key_def = KEY_DEFINITIONS.get(key)
         if key_def:
-            # Special keys
             kd = {"type": "rawKeyDown", **key_def}
             ku = {"type": "keyUp", **key_def}
             await self.send("Input.dispatchKeyEvent", kd)
@@ -269,7 +269,6 @@ class CDPClient:
                 await self.send("Input.dispatchKeyEvent", {"type": "char", "text": key_def["text"]})
             await self.send("Input.dispatchKeyEvent", ku)
         else:
-            # Regular characters
             for ch in key:
                 await self.send("Input.dispatchKeyEvent", {"type": "keyDown", "text": ch, "unmodifiedText": ch})
                 await self.send("Input.dispatchKeyEvent", {"type": "keyUp"})
@@ -312,6 +311,41 @@ class CDPClient:
             return false;
         }})()"""
         return await self.evaluate(js)
+
+    async def get_storage(self) -> Dict[str, Any]:
+        js = """(() => {
+            const local = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                local[k] = localStorage.getItem(k);
+            }
+            const session = {};
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const k = sessionStorage.key(i);
+                session[k] = sessionStorage.getItem(k);
+            }
+            return { localStorage: local, sessionStorage: session };
+        })()"""
+        return await self.evaluate(js)
+
+    async def set_viewport(self, width: int = 1280, height: int = 800, mobile: bool = False, device_scale_factor: float = 1.0) -> bool:
+        params = {
+            "width": width,
+            "height": height,
+            "deviceScaleFactor": device_scale_factor,
+            "mobile": mobile
+        }
+        await self.send("Emulation.setDeviceMetricsOverride", params)
+        return True
+
+    async def upload_file(self, selector: str, files: List[str]) -> bool:
+        doc = await self.send("DOM.getDocument")
+        node_res = await self.send("DOM.querySelector", {"nodeId": doc["root"]["nodeId"], "selector": selector})
+        node_id = node_res.get("nodeId")
+        if not node_id:
+            raise RuntimeError(f"File input '{selector}' not found in DOM")
+        await self.send("DOM.setFileInputFiles", {"files": files, "nodeId": node_id})
+        return True
 
     async def get_response_body(self, request_id: str) -> Dict[str, Any]:
         try:

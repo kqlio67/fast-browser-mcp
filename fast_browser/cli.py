@@ -55,13 +55,36 @@ async def run_cli():
 
     # press-key
     key_p = subparsers.add_parser("press-key", help="Press a keyboard key")
-    key_p.add_argument("key", help="Key name (Enter, Escape, Tab, Backspace, ArrowDown, etc.)")
+    key_p.add_argument("key", help="Key name (Enter, Escape, Tab, Backspace, etc.)")
 
     # scroll
     scroll_p = subparsers.add_parser("scroll", help="Scroll the page")
     scroll_p.add_argument("--delta-y", type=int, default=400, help="Vertical scroll pixels")
     scroll_p.add_argument("--ref", help="Element reference to scroll to")
     scroll_p.add_argument("--selector", help="CSS selector to scroll to")
+
+    # console
+    console_p = subparsers.add_parser("console", help="View captured JavaScript console logs")
+    console_p.add_argument("--type", help="Filter by type (log, error, warning, info)")
+    console_p.add_argument("--limit", type=int, default=30, help="Max entries")
+
+    # storage
+    subparsers.add_parser("storage", help="Dump localStorage and sessionStorage")
+
+    # export-traffic
+    exp_p = subparsers.add_parser("export-traffic", help="Export traffic dump to JSON file")
+    exp_p.add_argument("output", help="Output JSON file path")
+
+    # viewport
+    vp_p = subparsers.add_parser("viewport", help="Set viewport dimensions")
+    vp_p.add_argument("--width", type=int, default=1280, help="Width in pixels")
+    vp_p.add_argument("--height", type=int, default=800, help="Height in pixels")
+    vp_p.add_argument("--mobile", action="store_true", help="Enable mobile emulation")
+
+    # upload
+    up_p = subparsers.add_parser("upload", help="Upload file to input")
+    up_p.add_argument("--selector", required=True, help="CSS selector of file input")
+    up_p.add_argument("files", nargs="+", help="File paths to upload")
 
     # network requests
     net_p = subparsers.add_parser("requests", help="List captured network requests")
@@ -159,6 +182,26 @@ async def run_cli():
         batch = BatchRunner(cdp)
         res = await batch.execute([{"action": "scroll", "delta_y": args.delta_y, "ref": args.ref, "selector": args.selector}])
         print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "console":
+        logs = cdp.console.list_logs(log_type=args.type, limit=args.limit)
+        print(json.dumps(logs, ensure_ascii=False, indent=2))
+
+    elif args.command == "storage":
+        data = await cdp.get_storage()
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+
+    elif args.command == "export-traffic":
+        cdp.network.export_to_file(args.output)
+        print(f"Exported traffic to {args.output}")
+
+    elif args.command == "viewport":
+        await cdp.set_viewport(width=args.width, height=args.height, mobile=args.mobile)
+        print(f"Viewport set to {args.width}x{args.height} (mobile={args.mobile})")
+
+    elif args.command == "upload":
+        await cdp.upload_file(args.selector, args.files)
+        print(f"Uploaded {len(args.files)} files to {args.selector}")
 
     elif args.command == "requests":
         reqs = cdp.network.list_requests(filter_type=args.type, url_pattern=args.url, limit=args.limit)
