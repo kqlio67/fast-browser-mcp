@@ -800,18 +800,6 @@ TOOLS = [
         }
     },
     {
-        "name": "browser_grant_permissions",
-        "description": "Grant browser permissions (e.g. ['geolocation', 'notifications', 'clipboardReadWrite']) to current origin.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "permissions": {"type": "array", "items": {"type": "string"}, "description": "List of permission names"},
-                "origin": {"type": "string", "description": "Target origin (defaults to current page origin)"}
-            },
-            "required": ["permissions"]
-        }
-    },
-    {
         "name": "browser_cdp_send",
         "description": "UNIVERSAL RAW CDP (GOD MODE): Send any raw Chrome DevTools Protocol command directly with custom parameters (e.g. 'DOM.getBoxModel', 'CSS.enable', 'Memory.getDOMCounters', 'Tracing.start', 'Fetch.enable').",
         "inputSchema": {
@@ -1268,13 +1256,6 @@ class MCPServer:
 
         elif name == "browser_set_timezone":
             res = await self.cdp.set_timezone(timezone_id=args.get("timezone", "UTC"))
-            return json.dumps(res, indent=2)
-
-        elif name == "browser_grant_permissions":
-            res = await self.cdp.grant_permissions(
-                permissions=args.get("permissions", []),
-                origin=args.get("origin")
-            )
             return json.dumps(res, indent=2)
 
         elif name == "browser_cdp_send":

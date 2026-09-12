@@ -118,11 +118,22 @@ pip install -e .
 ### 1. Launch Chrome with Remote Debugging
 Start your browser with `--remote-debugging-port=9222`:
 
-**Linux:**
+**Linux (Standard Desktop GUI):**
 ```bash
 google-chrome --remote-debugging-port=9222 &
 # Or if using Chromium / Helium:
 chromium --remote-debugging-port=9222 &
+```
+
+**Linux (Completely Hidden Background Mode via Xvfb):**
+*Runs Chrome on a virtual display in memory — zero desktop windows, no keyboard/mouse focus stealing, full anti-bot evasion:*
+```bash
+nohup xvfb-run -a google-chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="/tmp/chrome_hidden_session" \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-gpu > /dev/null 2>&1 &
 ```
 
 **macOS:**
@@ -169,7 +180,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 
 ---
 
-## 🛠️ Complete Tool Reference (40+ Tools)
+## 🛠️ Complete Tool Reference (64 Tools)
 
 ### 📑 Tab & Navigation
 | Tool | Description |
@@ -220,6 +231,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `wait_idle`, `block_resources`, `metrics`, `geolocation`, `timezone`, `permissions`, `cleanup_tabs`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, `cdp_send`, `css_styles`, `isolated_tab`, `cpu_throttling`, `handle_dialog`, etc. |
 | `browser_wait_for_network_idle` | Wait until all in-flight network requests cease for a stable duration |
 | `browser_block_resources` | Block images, video/audio media, web fonts, or tracking scripts/ads for up to 10x page load speedup |
+| `browser_block_urls` | Block specific wildcard URL patterns (e.g. `*.png`, `*analytics*`, `*ads*`) to accelerate page load times |
 | `browser_cleanup_tabs` | Automatically close blank (`about:blank`), stale, or pattern-matching tabs to free RAM |
 | `browser_performance_metrics` | Live memory profiling: JS heap used (MB), DOM nodes, layouts, and task durations |
 
@@ -256,6 +268,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_grant_permissions` | Grant or reset permissions (`clipboardReadWrite`, `notifications`, `geolocation`) |
 | `browser_set_geolocation` | Override device GPS coordinates (`latitude`, `longitude`, `accuracy`) |
 | `browser_set_timezone` | Emulate local timezone (e.g. `Europe/Kyiv`, `America/New_York`) |
+| `browser_emulate_environment` | Emulate geolocation coordinates and/or timezone simultaneously in a single call |
 | `browser_console_logs` | View captured console logs (`console.log`, `error`, `warn`, unhandled exceptions) |
 | `browser_set_viewport` | Configure viewport dimensions and mobile device emulation |
 | `browser_set_user_agent` | Override User-Agent header |
