@@ -4,6 +4,10 @@ import json
 import logging
 import requests
 import websockets
+try:
+    from websockets.protocol import State as WsState
+except ImportError:
+    WsState = getattr(websockets, "State", None)
 from typing import Dict, Any, Optional, List, Union
 from .network import NetworkMonitor, ConsoleMonitor
 
@@ -45,7 +49,16 @@ class CDPClient:
 
     @property
     def is_connected(self) -> bool:
-        return self._ws is not None and not self._ws.closed
+        if self._ws is None:
+            return False
+        state = getattr(self._ws, "state", None)
+        if WsState is not None and isinstance(state, WsState):
+            return state == WsState.OPEN
+        if hasattr(self._ws, "closed"):
+            return not self._ws.closed
+        if hasattr(self._ws, "open"):
+            return bool(self._ws.open)
+        return True
 
     def list_targets(self) -> List[Dict[str, Any]]:
         url = f"http://{self.host}:{self.port}/json"
@@ -127,7 +140,7 @@ class CDPClient:
             if not self.ws_url:
                 raise RuntimeError(f"Target {self.target_id} has no webSocketDebuggerUrl")
 
-            if self._ws and not self._ws.closed:
+            if self.is_connected:
                 await self.close()
 
             self._ws = await websockets.connect(self.ws_url, max_size=50 * 1024 * 1024)
