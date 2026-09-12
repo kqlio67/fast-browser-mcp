@@ -2,16 +2,112 @@ import asyncio
 import json
 import base64
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Set, Union, TypedDict
 from .cdp import CDPClient
 from .snapshot import PageSnapshot
+
+class BatchStep(TypedDict, total=False):
+    action: str
+    ref: Optional[str]
+    selector: Optional[str]
+    text: Optional[str]
+    url: Optional[str]
+    key: Optional[str]
+    script: Optional[str]
+    expression: Optional[str]
+    ms: Optional[int]
+    delta_x: Optional[int]
+    delta_y: Optional[int]
+    x: Optional[float]
+    y: Optional[float]
+    method: Optional[str]
+    params: Optional[Dict[str, Any]]
+    rate: Optional[float]
+    theme: Optional[str]
+    scale: Optional[float]
+    page: Optional[str]
+    profile: Optional[str]
+
+VALID_ACTIONS: Set[str] = {
+    'back', 'block_resources', 'block_urls', 'cdp_send', 'cleanup_tabs', 'clear_cache', 'clear_cookies',
+    'click', 'clipboard', 'console_logs', 'cpu_throttling', 'css_styles', 'double_click', 'drag_and_drop',
+    'eval', 'export_traffic', 'extension_action', 'extensions', 'extract', 'fill', 'find', 'forward',
+    'geolocation', 'get_html', 'get_storage', 'grant_permissions', 'handle_dialog', 'history', 'hover',
+    'indexeddb', 'isolated_tab', 'metrics', 'performance_metrics', 'mouse_move', 'mute', 'navigate',
+    'network_requests', 'pdf', 'permissions', 'preload_script', 'press_key', 'reload', 'right_click',
+    'screenshot', 'scroll', 'select_option', 'set_cookie', 'set_download_path', 'download_path',
+    'set_geolocation', 'set_headers', 'set_timezone', 'set_user_agent', 'set_viewport', 'snapshot',
+    'ssl_ignore', 'stealth', 'system_info', 'system_page', 'theme', 'throttling', 'timezone',
+    'upload_file', 'wait', 'wait_idle', 'window', 'ws_messages', 'zoom'
+}
 
 class BatchRunner:
     def __init__(self, cdp: CDPClient):
         self.cdp = cdp
         self.snapshot_tool = PageSnapshot(cdp)
 
+    @classmethod
+    def validate_step(cls, step: Any, idx: int) -> Optional[str]:
+        """Validate an individual batch step dictionary."""
+        if not isinstance(step, dict):
+            return f"Step {idx + 1}: expected action dictionary, got {type(step).__name__}"
+        action = step.get("action")
+        if not action or not isinstance(action, str):
+            return f"Step {idx + 1}: missing or non-string 'action'"
+        act = action.lower()
+        if act not in VALID_ACTIONS:
+            return f"Step {idx + 1}: unknown action '{action}'. Valid actions: {', '.join(sorted(VALID_ACTIONS))}"
+
+        # Action-specific parameter checks
+        if act == "navigate" and not step.get("url"):
+            return f"Step {idx + 1} ('navigate'): missing required 'url'"
+        if act in ("click", "double_click", "right_click", "hover"):
+            if not (step.get("ref") or step.get("selector") or (step.get("x") is not None and step.get("y") is not None)):
+                return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
+        if act == "fill":
+            if not (step.get("ref") or step.get("selector")):
+                return f"Step {idx + 1} ('fill'): requires 'ref' or 'selector' target"
+            if step.get("text") is None:
+                return f"Step {idx + 1} ('fill'): missing 'text' to fill"
+        if act == "press_key" and not step.get("key"):
+            return f"Step {idx + 1} ('press_key'): missing 'key' name"
+        if act == "eval" and not (step.get("script") or step.get("expression")):
+            return f"Step {idx + 1} ('eval'): missing 'script' or 'expression'"
+        if act == "extract" and not step.get("selector"):
+            return f"Step {idx + 1} ('extract'): missing 'selector'"
+        if act == "cdp_send" and not step.get("method"):
+            return f"Step {idx + 1} ('cdp_send'): missing 'method'"
+        if act == "css_styles" and not (step.get("ref") or step.get("selector")):
+            return f"Step {idx + 1} ('css_styles'): requires 'ref' or 'selector'"
+        if act == "block_urls" and not step.get("patterns"):
+            return f"Step {idx + 1} ('block_urls'): missing 'patterns' list"
+        return None
+
+    @classmethod
+    def validate_pipeline(cls, steps: List[Dict[str, Any]]) -> List[str]:
+        """Pre-flight validate the entire batch pipeline before execution."""
+        if not isinstance(steps, list):
+            return ["Pipeline 'steps' must be a list of action dictionaries"]
+        errors = []
+        for idx, step in enumerate(steps):
+            err = cls.validate_step(step, idx)
+            if err:
+                errors.append(err)
+        return errors
+
     async def execute(self, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+        # Pre-flight validation
+        validation_errors = self.validate_pipeline(steps)
+        if validation_errors:
+            return {
+                "success": False,
+                "error": "Batch pre-validation failed: " + "; ".join(validation_errors),
+                "validation_errors": validation_errors,
+                "total_duration_ms": 0.0,
+                "steps_executed": 0,
+                "results": []
+            }
+
         results: List[Dict[str, Any]] = []
         t0 = time.perf_counter()
 
@@ -388,9 +484,9 @@ class BatchRunner:
                     step_res["status"] = "ok"
 
                 elif action == "eval":
-                    script = step.get("script")
+                    script = step.get("script") or step.get("expression")
                     if not script:
-                        raise ValueError("Missing 'script' for eval action")
+                        raise ValueError("Missing 'script' or 'expression' for eval action")
                     val = await self.cdp.evaluate(script)
                     step_res["status"] = "ok"
                     step_res["result"] = val

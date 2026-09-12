@@ -88,12 +88,21 @@ class NetworkMonitor:
                 self.in_flight_requests.add(req_id)
             self.last_activity_time = time.time()
             req = params.get("request", {})
+            post_data = req.get("postData")
+            if post_data and len(post_data) > 10240:
+                post_data = post_data[:10240] + "... [truncated]"
+
+            # Ring buffer eviction: prune requests dict when deque limit is reached
+            if len(self.ordered_requests) >= self.max_requests:
+                oldest_id = self.ordered_requests[0]
+                self.requests.pop(oldest_id, None)
+
             entry = {
                 "id": req_id,
                 "url": req.get("url"),
                 "method": req.get("method"),
                 "headers": req.get("headers", {}),
-                "postData": req.get("postData"),
+                "postData": post_data,
                 "type": params.get("type", "Other"),
                 "timestamp": t,
                 "status": None,
@@ -124,6 +133,9 @@ class NetworkMonitor:
         elif method == "Network.webSocketCreated":
             req_id = params.get("requestId")
             url = params.get("url")
+            # Limit ws_connections map to prevent memory leak
+            if len(self.ws_connections) > 200:
+                self.ws_connections.clear()
             self.ws_connections[req_id] = url
             self.ws_frames.append({
                 "timestamp": t,
@@ -155,6 +167,17 @@ class NetworkMonitor:
                 "url": self.ws_connections.get(req_id, "unknown"),
                 "direction": "received",
                 "data": data[:2000]
+            })
+
+        elif method == "Network.webSocketClosed":
+            req_id = params.get("requestId")
+            url = self.ws_connections.pop(req_id, "unknown")
+            self.ws_frames.append({
+                "timestamp": t,
+                "type": "disconnect",
+                "url": url,
+                "direction": "system",
+                "data": f"WebSocket closed: {url}"
             })
 
     def list_requests(self, filter_type: Optional[str] = None, url_pattern: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
@@ -213,3 +236,5 @@ class NetworkMonitor:
         self.requests.clear()
         self.ordered_requests.clear()
         self.ws_frames.clear()
+        self.ws_connections.clear()
+        self.in_flight_requests.clear()

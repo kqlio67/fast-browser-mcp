@@ -56,8 +56,26 @@ class CDPClient:
             logger.error(f"Failed to list CDP targets from {url}: {e}")
             return []
 
+    async def list_targets_async(self) -> List[Dict[str, Any]]:
+        """Asynchronously list CDP targets without blocking the event loop."""
+        return await asyncio.to_thread(self.list_targets)
+
     def find_target(self, query: Optional[str] = None, target_type: str = "page") -> Optional[Dict[str, Any]]:
         targets = self.list_targets()
+        pages = [t for t in targets if t.get("type") == target_type]
+        if not pages:
+            return None
+        if not query:
+            return pages[0]
+        q = query.lower()
+        for p in pages:
+            if q in p.get("title", "").lower() or q in p.get("url", "").lower() or q == p.get("id", "").lower():
+                return p
+        return None
+
+    async def find_target_async(self, query: Optional[str] = None, target_type: str = "page") -> Optional[Dict[str, Any]]:
+        """Asynchronously find a matching CDP target without blocking the event loop."""
+        targets = await self.list_targets_async()
         pages = [t for t in targets if t.get("type") == target_type]
         if not pages:
             return None
@@ -75,11 +93,19 @@ class CDPClient:
                 return t
         return None
 
+    async def get_target_by_id_async(self, target_id: str) -> Optional[Dict[str, Any]]:
+        """Asynchronously find a CDP target by ID without blocking the event loop."""
+        targets = await self.list_targets_async()
+        for t in targets:
+            if t.get("id") == target_id:
+                return t
+        return None
+
     async def connect(self, target_query: Optional[str] = None, target_id: Optional[str] = None):
         if target_id:
-            target = self.get_target_by_id(target_id)
+            target = await self.get_target_by_id_async(target_id)
         else:
-            target = self.find_target(target_query)
+            target = await self.find_target_async(target_query)
         if not target:
             raise RuntimeError(f"No matching browser page found (query={target_query!r}, target_id={target_id!r}) on {self.host}:{self.port}")
         
@@ -232,10 +258,12 @@ class CDPClient:
         return res.status_code == 200
 
     async def new_tab(self, url: str = "about:blank") -> Dict[str, Any]:
-        return self.new_tab_sync(url)
+        """Asynchronously open a new tab without blocking the event loop."""
+        return await asyncio.to_thread(self.new_tab_sync, url)
 
     async def close_tab(self, target_id: Optional[str] = None) -> bool:
-        return self.close_tab_sync(target_id)
+        """Asynchronously close a tab without blocking the event loop."""
+        return await asyncio.to_thread(self.close_tab_sync, target_id)
 
     async def wait_for_dom_ready(self, timeout: float = 10.0):
         t0 = asyncio.get_running_loop().time()
@@ -561,7 +589,7 @@ class CDPClient:
     async def send_browser_cmd(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
         """Send a CDP command directly to the browser-level WebSocket endpoint."""
         ver_url = f"http://{self.host}:{self.port}/json/version"
-        resp = requests.get(ver_url, timeout=3)
+        resp = await asyncio.to_thread(requests.get, ver_url, timeout=3)
         resp.raise_for_status()
         browser_ws_url = resp.json().get("webSocketDebuggerUrl")
         if not browser_ws_url:
@@ -590,11 +618,15 @@ class CDPClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_browser_version_async(self) -> Dict[str, Any]:
+        """Asynchronously get browser and CDP protocol version info."""
+        return await asyncio.to_thread(self.get_browser_version)
+
     async def get_window_bounds(self, target_id: Optional[str] = None) -> Dict[str, Any]:
         """Get browser window bounds and state (normal, minimized, maximized, fullscreen)."""
         tid = target_id or self.target_id
         if not tid:
-            targets = self.list_targets()
+            targets = await self.list_targets_async()
             pages = [t for t in targets if t.get("type") == "page"]
             if pages:
                 tid = pages[0]["id"]
