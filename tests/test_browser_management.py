@@ -1,12 +1,13 @@
 import unittest
 import asyncio
-from fast_browser.cdp import CDPClient
 from fast_browser.snapshot import PageSnapshot
 from fast_browser.batch import BatchRunner
+try:
+    from .base import BaseBrowserTest
+except ImportError:
+    from base import BaseBrowserTest
 
-class TestBrowserManagement(unittest.TestCase):
-    def setUp(self):
-        self.cdp = CDPClient()
+class TestBrowserManagement(BaseBrowserTest):
 
     def test_browser_version(self):
         ver = self.cdp.get_browser_version()

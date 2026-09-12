@@ -359,11 +359,13 @@ python3 -m fast_browser.cli --tab mytab batch '[
 
 ## 🧪 Testing
 
-Run the automated test suite against a running Chrome instance on port 9222:
+The automated test suite runs in a **100% isolated headless background process** on an ephemeral dynamic port with a temporary user data directory. It **never touches your personal browser session (port 9222)**, never opens or closes visible desktop tabs, and never steals mouse or keyboard focus:
 
 ```bash
 PYTHONPATH=. python3 -m unittest discover -s tests
 ```
+
+*(Optional: To explicitly run tests against an existing custom port, set the `CDP_PORT` environment variable: `CDP_PORT=9222 python3 -m unittest discover -s tests`).*
 
 ---
 

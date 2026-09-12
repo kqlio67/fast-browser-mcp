@@ -1,20 +1,13 @@
 import unittest
 import asyncio
-from fast_browser.cdp import CDPClient
 from fast_browser.snapshot import PageSnapshot
 from fast_browser.batch import BatchRunner
+try:
+    from .base import BaseBrowserTest
+except ImportError:
+    from base import BaseBrowserTest
 
-class TestFastBrowser(unittest.TestCase):
-    def setUp(self):
-        self.cdp = CDPClient()
-        self.tab = self.cdp.new_tab_sync("about:blank")
-        self.tab_id = self.tab["id"]
-
-    def tearDown(self):
-        try:
-            self.cdp.close_tab_sync(self.tab_id)
-        except Exception:
-            pass
+class TestFastBrowser(BaseBrowserTest):
 
     def test_list_targets(self):
         targets = self.cdp.list_targets()

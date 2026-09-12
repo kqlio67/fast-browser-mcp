@@ -1,3 +1,4 @@
+import os
 import asyncio
 import json
 import logging
@@ -23,9 +24,10 @@ KEY_DEFINITIONS = {
 }
 
 class CDPClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 9222):
-        self.host = host
-        self.port = port
+    def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
+        self.host = host or os.environ.get("CDP_HOST", "127.0.0.1")
+        env_port = os.environ.get("CDP_PORT")
+        self.port = int(port if port is not None else (int(env_port) if env_port else 9222))
         self.ws_url: Optional[str] = None
         self.target_id: Optional[str] = None
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
