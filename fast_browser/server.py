@@ -86,10 +86,24 @@ TOOLS = [
     },
     {
         "name": "browser_snapshot",
-        "description": "Capture a compact, token-efficient snapshot of the active page showing all interactive elements with numbered references (@1, @2, ...), smart labels (including icons/images/CSS backgrounds), headings, and accessible iframes.",
+        "description": "Capture a compact, token-efficient snapshot of the active page showing interactive elements with numbered references (@1, @2, ...), smart labels (icons/images/CSS backgrounds), headings, and accessible iframes. Supports scoping to a CSS selector and viewport-only filtering.",
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "Optional CSS selector to scope snapshot to a specific DOM container"
+                },
+                "in_viewport": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, only include elements currently visible in viewport"
+                },
+                "max_elements": {
+                    "type": "integer",
+                    "description": "Maximum interactive elements to include (truncates remainder to save tokens)"
+                }
+            },
             "required": []
         }
     },
@@ -711,6 +725,91 @@ TOOLS = [
             },
             "required": []
         }
+    },
+    {
+        "name": "browser_wait_for_network_idle",
+        "description": "Wait until network is completely idle (no active in-flight requests) for the specified duration.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "idle_time": {"type": "number", "default": 0.5, "description": "Continuous idle time required in seconds"},
+                "timeout": {"type": "number", "default": 10.0, "description": "Maximum time to wait in seconds"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_block_resources",
+        "description": "Block heavy resources (images, video/audio media, web fonts, tracking scripts/ads) or custom URLs to dramatically accelerate page load speed (up to 10x).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "blocked_urls": {"type": "array", "items": {"type": "string"}, "description": "Custom URL glob patterns to block"},
+                "block_images": {"type": "boolean", "default": False, "description": "Block all PNG/JPG/WEBP/GIF/SVG images"},
+                "block_media": {"type": "boolean", "default": False, "description": "Block all MP4/WEBM/OGG/MP3 video and audio"},
+                "block_fonts": {"type": "boolean", "default": False, "description": "Block all WOFF/TTF/OTF web fonts"},
+                "block_ads": {"type": "boolean", "default": False, "description": "Block Google Analytics, GTM, DoubleClick, Facebook, and common trackers"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_cleanup_tabs",
+        "description": "Automatically close stale, blank (about:blank), or pattern-matching tabs to free browser memory and maintain cleanliness.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "keep_current": {"type": "boolean", "default": True, "description": "Do not close the currently active tab"},
+                "close_blank": {"type": "boolean", "default": True, "description": "Close all blank or empty new tabs"},
+                "url_patterns": {"type": "array", "items": {"type": "string"}, "description": "List of URL substrings/patterns to close"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_performance_metrics",
+        "description": "Retrieve real-time browser performance metrics: JS heap memory usage (MB), DOM node count, layout count, and task duration.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_set_geolocation",
+        "description": "Override device GPS geolocation coordinates (latitude, longitude, accuracy).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "latitude": {"type": "number", "description": "Latitude coordinate"},
+                "longitude": {"type": "number", "description": "Longitude coordinate"},
+                "accuracy": {"type": "number", "default": 1.0, "description": "Accuracy in meters"}
+            },
+            "required": ["latitude", "longitude"]
+        }
+    },
+    {
+        "name": "browser_set_timezone",
+        "description": "Override browser timezone (e.g. 'America/New_York', 'Europe/Kyiv', 'UTC').",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "timezone": {"type": "string", "description": "Timezone identifier"}
+            },
+            "required": ["timezone"]
+        }
+    },
+    {
+        "name": "browser_grant_permissions",
+        "description": "Grant browser permissions (e.g. ['geolocation', 'notifications', 'clipboardReadWrite']) to current origin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "permissions": {"type": "array", "items": {"type": "string"}, "description": "List of permission names"},
+                "origin": {"type": "string", "description": "Target origin (defaults to current page origin)"}
+            },
+            "required": ["permissions"]
+        }
     }
 ]
 
@@ -753,7 +852,10 @@ class MCPServer:
         await self.ensure_connected()
 
         if name == "browser_snapshot":
-            return await self.snapshot.capture_formatted()
+            selector = args.get("selector")
+            in_viewport = args.get("in_viewport", False)
+            max_elements = args.get("max_elements")
+            return await self.snapshot.capture_formatted(selector=selector, in_viewport=in_viewport, max_elements=max_elements)
 
         elif name == "browser_batch":
             steps = args.get("steps", [])
@@ -1069,6 +1171,53 @@ class MCPServer:
             res = await self.cdp.set_ignore_certificate_errors(ignore=ignore)
             return json.dumps(res, ensure_ascii=False, indent=2)
 
+        elif name == "browser_wait_for_network_idle":
+            idle_time = args.get("idle_time", 0.5)
+            timeout = args.get("timeout", 10.0)
+            ok = await self.cdp.wait_for_network_idle(idle_time=idle_time, timeout=timeout)
+            return json.dumps({"idle": ok, "idle_time": idle_time, "timeout": timeout}, indent=2)
+
+        elif name == "browser_block_resources":
+            res = await self.cdp.block_resources(
+                blocked_urls=args.get("blocked_urls"),
+                block_images=args.get("block_images", False),
+                block_media=args.get("block_media", False),
+                block_fonts=args.get("block_fonts", False),
+                block_ads=args.get("block_ads", False)
+            )
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_cleanup_tabs":
+            res = self.cdp.cleanup_tabs(
+                keep_current=args.get("keep_current", True),
+                close_blank=args.get("close_blank", True),
+                url_patterns=args.get("url_patterns")
+            )
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_performance_metrics":
+            res = await self.cdp.get_performance_metrics()
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_set_geolocation":
+            res = await self.cdp.set_geolocation(
+                latitude=args.get("latitude", 0.0),
+                longitude=args.get("longitude", 0.0),
+                accuracy=args.get("accuracy", 1.0)
+            )
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_set_timezone":
+            res = await self.cdp.set_timezone(timezone_id=args.get("timezone", "UTC"))
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_grant_permissions":
+            res = await self.cdp.grant_permissions(
+                permissions=args.get("permissions", []),
+                origin=args.get("origin")
+            )
+            return json.dumps(res, indent=2)
+
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -1111,7 +1260,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.6.0"
+                                "version": "0.7.0"
                             }
                         }
                     }

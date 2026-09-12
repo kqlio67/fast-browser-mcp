@@ -73,12 +73,20 @@ class NetworkMonitor:
         self.ordered_requests: deque = deque(maxlen=max_requests)
         self.ws_frames: deque = deque(maxlen=max_ws_frames)
         self.ws_connections: Dict[str, str] = {}  # requestId -> url
+        self.in_flight_requests: set = set()
+        self.last_activity_time: float = time.time()
+
+    def is_network_idle(self, idle_time: float = 0.5) -> bool:
+        return len(self.in_flight_requests) == 0 and (time.time() - self.last_activity_time) >= idle_time
 
     def handle_event(self, method: str, params: Dict[str, Any]):
         t = time.strftime("%H:%M:%S")
 
         if method == "Network.requestWillBeSent":
             req_id = params.get("requestId")
+            if req_id:
+                self.in_flight_requests.add(req_id)
+            self.last_activity_time = time.time()
             req = params.get("request", {})
             entry = {
                 "id": req_id,
@@ -97,6 +105,7 @@ class NetworkMonitor:
             self.ordered_requests.append(req_id)
 
         elif method == "Network.responseReceived":
+            self.last_activity_time = time.time()
             req_id = params.get("requestId")
             resp = params.get("response", {})
             if req_id in self.requests:
@@ -105,6 +114,12 @@ class NetworkMonitor:
                 entry["statusText"] = resp.get("statusText")
                 entry["responseHeaders"] = resp.get("headers", {})
                 entry["mimeType"] = resp.get("mimeType")
+
+        elif method in ("Network.loadingFinished", "Network.loadingFailed"):
+            self.last_activity_time = time.time()
+            req_id = params.get("requestId")
+            if req_id:
+                self.in_flight_requests.discard(req_id)
 
         elif method == "Network.webSocketCreated":
             req_id = params.get("requestId")

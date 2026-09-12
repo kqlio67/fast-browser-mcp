@@ -396,7 +396,11 @@ class BatchRunner:
                     step_res["result"] = val
 
                 elif action == "snapshot":
-                    snap = await self.snapshot_tool.capture_formatted()
+                    snap = await self.snapshot_tool.capture_formatted(
+                        selector=step.get("selector"),
+                        in_viewport=step.get("in_viewport", False),
+                        max_elements=step.get("max_elements")
+                    )
                     step_res["status"] = "ok"
                     step_res["snapshot"] = snap
 
@@ -591,6 +595,59 @@ class BatchRunner:
                     res = await self.cdp.set_ignore_certificate_errors(ignore=ignore)
                     step_res["status"] = "ok"
                     step_res["ssl_ignore"] = res
+
+                elif action == "wait_idle":
+                    idle_time = step.get("idle_time", 0.5)
+                    timeout = step.get("timeout", 10.0)
+                    ok = await self.cdp.wait_for_network_idle(idle_time=idle_time, timeout=timeout)
+                    step_res["status"] = "ok"
+                    step_res["idle"] = ok
+
+                elif action == "block_resources":
+                    res = await self.cdp.block_resources(
+                        blocked_urls=step.get("blocked_urls"),
+                        block_images=step.get("images", False),
+                        block_media=step.get("media", False),
+                        block_fonts=step.get("fonts", False),
+                        block_ads=step.get("ads", False)
+                    )
+                    step_res["status"] = "ok"
+                    step_res["blocked"] = res
+
+                elif action == "cleanup_tabs":
+                    res = self.cdp.cleanup_tabs(
+                        keep_current=step.get("keep_current", True),
+                        close_blank=step.get("close_blank", True),
+                        url_patterns=step.get("url_patterns")
+                    )
+                    step_res["status"] = "ok"
+                    step_res["cleanup"] = res
+
+                elif action == "metrics":
+                    res = await self.cdp.get_performance_metrics()
+                    step_res["status"] = "ok"
+                    step_res["metrics"] = res
+
+                elif action == "geolocation":
+                    lat = step.get("latitude", 0.0)
+                    lon = step.get("longitude", 0.0)
+                    acc = step.get("accuracy", 1.0)
+                    res = await self.cdp.set_geolocation(latitude=lat, longitude=lon, accuracy=acc)
+                    step_res["status"] = "ok"
+                    step_res["geolocation"] = res
+
+                elif action == "timezone":
+                    tz = step.get("timezone", "UTC")
+                    res = await self.cdp.set_timezone(timezone_id=tz)
+                    step_res["status"] = "ok"
+                    step_res["timezone"] = res
+
+                elif action == "permissions":
+                    perms = step.get("permissions", [])
+                    origin = step.get("origin")
+                    res = await self.cdp.grant_permissions(permissions=perms, origin=origin)
+                    step_res["status"] = "ok"
+                    step_res["permissions"] = res
 
                 else:
                     raise ValueError(f"Unknown action: {action!r}")

@@ -33,7 +33,10 @@ async def run_cli():
     reload_p.add_argument("--ignore-cache", action="store_true", help="Ignore cache")
 
     # snapshot
-    subparsers.add_parser("snapshot", help="Take a token-efficient numbered snapshot of page elements")
+    snap_p = subparsers.add_parser("snapshot", help="Take a token-efficient numbered snapshot of page elements")
+    snap_p.add_argument("--selector", help="Scope snapshot to CSS selector")
+    snap_p.add_argument("--in-viewport", action="store_true", help="Only elements currently visible in viewport")
+    snap_p.add_argument("--max-elements", type=int, help="Limit maximum interactive elements")
 
     # html
     html_p = subparsers.add_parser("html", help="Extract full HTML of page")
@@ -222,6 +225,43 @@ async def run_cli():
     ssl_p = subparsers.add_parser("ssl-ignore", help="Bypass SSL certificate errors")
     ssl_p.add_argument("--enforce", action="store_true", help="Do not ignore SSL errors")
 
+    # wait-idle
+    idle_p = subparsers.add_parser("wait-idle", help="Wait for network requests to become idle")
+    idle_p.add_argument("--idle-time", type=float, default=0.5, help="Continuous idle duration in seconds")
+    idle_p.add_argument("--timeout", type=float, default=10.0, help="Max wait timeout in seconds")
+
+    # block-resources
+    block_p = subparsers.add_parser("block-resources", help="Block images, media, fonts, or ads to boost speed")
+    block_p.add_argument("--urls", nargs="+", help="Custom URL patterns to block")
+    block_p.add_argument("--images", action="store_true", help="Block image files")
+    block_p.add_argument("--media", action="store_true", help="Block video and audio")
+    block_p.add_argument("--fonts", action="store_true", help="Block web fonts")
+    block_p.add_argument("--ads", action="store_true", help="Block trackers and analytics")
+
+    # cleanup-tabs
+    clean_p = subparsers.add_parser("cleanup-tabs", help="Close blank or pattern-matching tabs to free memory")
+    clean_p.add_argument("--close-current", action="store_true", help="Also close current tab")
+    clean_p.add_argument("--keep-blank", action="store_true", help="Do not close blank tabs")
+    clean_p.add_argument("--patterns", nargs="+", help="URL substrings to close")
+
+    # metrics
+    subparsers.add_parser("metrics", help="Show browser memory and performance metrics")
+
+    # geolocation
+    geo_p = subparsers.add_parser("geolocation", help="Override GPS coordinates")
+    geo_p.add_argument("latitude", type=float, help="Latitude")
+    geo_p.add_argument("longitude", type=float, help="Longitude")
+    geo_p.add_argument("--accuracy", type=float, default=1.0, help="Accuracy in meters")
+
+    # timezone
+    tz_p = subparsers.add_parser("timezone", help="Override browser timezone")
+    tz_p.add_argument("timezone", help="Timezone name (e.g. America/New_York, Europe/Kyiv, UTC)")
+
+    # permissions
+    perm_p = subparsers.add_parser("permissions", help="Grant browser permissions")
+    perm_p.add_argument("permissions", nargs="+", help="Permissions to grant (e.g. geolocation notifications)")
+    perm_p.add_argument("--origin", help="Target origin")
+
     args = parser.parse_args()
 
     cdp = CDPClient(host=args.host, port=args.port)
@@ -298,7 +338,7 @@ async def run_cli():
 
     elif args.command == "snapshot":
         snap = PageSnapshot(cdp)
-        print(await snap.capture_formatted())
+        print(await snap.capture_formatted(selector=args.selector, in_viewport=args.in_viewport, max_elements=args.max_elements))
 
     elif args.command == "html":
         html = await cdp.get_html()
@@ -475,6 +515,44 @@ async def run_cli():
 
     elif args.command == "ssl-ignore":
         res = await cdp.set_ignore_certificate_errors(ignore=not args.enforce)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "wait-idle":
+        ok = await cdp.wait_for_network_idle(idle_time=args.idle_time, timeout=args.timeout)
+        print(f"Network idle: {ok}")
+
+    elif args.command == "block-resources":
+        res = await cdp.block_resources(
+            blocked_urls=args.urls,
+            block_images=args.images,
+            block_media=args.media,
+            block_fonts=args.fonts,
+            block_ads=args.ads
+        )
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "cleanup-tabs":
+        res = cdp.cleanup_tabs(
+            keep_current=not args.close_current,
+            close_blank=not args.keep_blank,
+            url_patterns=args.patterns
+        )
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "metrics":
+        res = await cdp.get_performance_metrics()
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "geolocation":
+        res = await cdp.set_geolocation(latitude=args.latitude, longitude=args.longitude, accuracy=args.accuracy)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "timezone":
+        res = await cdp.set_timezone(timezone_id=args.timezone)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "permissions":
+        res = await cdp.grant_permissions(permissions=args.permissions, origin=args.origin)
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     await cdp.close()

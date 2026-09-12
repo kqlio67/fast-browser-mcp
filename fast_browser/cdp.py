@@ -150,7 +150,14 @@ class CDPClient:
 
     async def send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
         if not self.is_connected:
-            raise RuntimeError("CDP WebSocket is not connected.")
+            if self.target_id:
+                try:
+                    logger.info(f"CDP socket disconnected. Auto-reconnecting to target {self.target_id}...")
+                    await self.connect(target_id=self.target_id)
+                except Exception as e:
+                    raise RuntimeError(f"CDP WebSocket disconnected and auto-reconnect failed: {e}")
+            else:
+                raise RuntimeError("CDP WebSocket is not connected.")
         
         self._req_id += 1
         req_id = self._req_id
@@ -159,7 +166,16 @@ class CDPClient:
         fut = asyncio.get_running_loop().create_future()
         self._pending_requests[req_id] = fut
         
-        await self._ws.send(json.dumps(payload))
+        try:
+            await self._ws.send(json.dumps(payload))
+        except (websockets.ConnectionClosed, websockets.ConnectionClosedError):
+            if self.target_id:
+                logger.info("WebSocket connection dropped during send. Reconnecting...")
+                await self.connect(target_id=self.target_id)
+                await self._ws.send(json.dumps(payload))
+            else:
+                raise
+
         try:
             return await asyncio.wait_for(fut, timeout=timeout)
         except asyncio.TimeoutError:
@@ -245,7 +261,36 @@ class CDPClient:
             await asyncio.sleep(0.05)
         return False
 
-    async def click(self, selector: str, timeout_ms: int = 3000) -> bool:
+    async def wait_for_element_stable(self, selector: str, timeout_ms: int = 3000) -> bool:
+        """Wait until element is present, visible, has dimensions > 0, and position is stable (no active animations)."""
+        js = f"""(async () => {{
+            const el = document.querySelector({json.dumps(selector)});
+            if (!el) return false;
+            try {{
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const r1 = el.getBoundingClientRect();
+                if (r1.width === 0 || r1.height === 0) return false;
+                await new Promise(r => setTimeout(r, 60));
+                const r2 = el.getBoundingClientRect();
+                return Math.abs(r1.left - r2.left) < 1 && Math.abs(r1.top - r2.top) < 1;
+            }} catch(e) {{
+                return false;
+            }}
+        }})()"""
+        t0 = asyncio.get_running_loop().time()
+        timeout_sec = timeout_ms / 1000.0
+        while (asyncio.get_running_loop().time() - t0) < timeout_sec:
+            try:
+                ok = await self.evaluate(js)
+                if ok:
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+        return False
+
+    async def click(self, selector: str, timeout_ms: int = 3000, wait_stable: bool = True) -> bool:
         js = f"""(() => {{
             const el = document.querySelector({json.dumps(selector)});
             if (!el) return false;
@@ -253,9 +298,16 @@ class CDPClient:
             el.click();
             return true;
         }})()"""
-        found = await self.wait_for_selector(selector, timeout_ms=timeout_ms)
-        if not found:
-            raise RuntimeError(f"Element '{selector}' not found for click within {timeout_ms}ms")
+        if wait_stable:
+            stable = await self.wait_for_element_stable(selector, timeout_ms=timeout_ms)
+            if not stable:
+                found = await self.wait_for_selector(selector, timeout_ms=500)
+                if not found:
+                    raise RuntimeError(f"Element '{selector}' not found or not stable within {timeout_ms}ms")
+        else:
+            found = await self.wait_for_selector(selector, timeout_ms=timeout_ms)
+            if not found:
+                raise RuntimeError(f"Element '{selector}' not found for click within {timeout_ms}ms")
         return await self.evaluate(js)
 
     async def double_click(self, x: float, y: float) -> bool:
@@ -284,7 +336,7 @@ class CDPClient:
         await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1})
         return True
 
-    async def fill(self, selector: str, text: str, clear: bool = True, timeout_ms: int = 3000) -> bool:
+    async def fill(self, selector: str, text: str, clear: bool = True, timeout_ms: int = 3000, wait_stable: bool = True) -> bool:
         js = f"""(() => {{
             const el = document.querySelector({json.dumps(selector)});
             if (!el) return false;
@@ -298,9 +350,16 @@ class CDPClient:
             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
             return true;
         }})()"""
-        found = await self.wait_for_selector(selector, timeout_ms=timeout_ms)
-        if not found:
-            raise RuntimeError(f"Element '{selector}' not found for fill within {timeout_ms}ms")
+        if wait_stable:
+            stable = await self.wait_for_element_stable(selector, timeout_ms=timeout_ms)
+            if not stable:
+                found = await self.wait_for_selector(selector, timeout_ms=500)
+                if not found:
+                    raise RuntimeError(f"Element '{selector}' not found or not stable within {timeout_ms}ms")
+        else:
+            found = await self.wait_for_selector(selector, timeout_ms=timeout_ms)
+            if not found:
+                raise RuntimeError(f"Element '{selector}' not found for fill within {timeout_ms}ms")
         return await self.evaluate(js)
 
     async def press_key(self, key: str) -> bool:
@@ -999,3 +1058,121 @@ class CDPClient:
             }
         })()"""
         return await self.evaluate(js)
+
+    # Network Idle
+    async def wait_for_network_idle(self, idle_time: float = 0.5, timeout: float = 10.0) -> bool:
+        """Wait until there are no active in-flight network requests for at least idle_time seconds."""
+        t0 = asyncio.get_running_loop().time()
+        while (asyncio.get_running_loop().time() - t0) < timeout:
+            if self.network.is_network_idle(idle_time):
+                return True
+            await asyncio.sleep(0.05)
+        return False
+
+    # Resource Blocker
+    async def block_resources(
+        self,
+        blocked_urls: Optional[List[str]] = None,
+        block_images: bool = False,
+        block_media: bool = False,
+        block_fonts: bool = False,
+        block_ads: bool = False
+    ) -> Dict[str, Any]:
+        """Block network resources by URL patterns or presets (images, media, fonts, ads)."""
+        patterns = list(blocked_urls or [])
+        if block_images:
+            patterns.extend(["*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.ico", "*.svg"])
+        if block_media:
+            patterns.extend(["*.mp4", "*.webm", "*.ogg", "*.mp3", "*.wav", "*.m3u8"])
+        if block_fonts:
+            patterns.extend(["*.woff", "*.woff2", "*.ttf", "*.otf", "*.eot"])
+        if block_ads:
+            patterns.extend([
+                "*google-analytics.com*", "*googletagmanager.com*",
+                "*doubleclick.net*", "*facebook.net*", "*adnxs.com*",
+                "*hotjar.com*", "*clarity.ms*", "*yandex.ru/metrika*"
+            ])
+        patterns = list(dict.fromkeys(patterns))  # Deduplicate preserving order
+        await self.send("Network.setBlockedURLs", {"urls": patterns})
+        return {"blocked": True, "count": len(patterns), "patterns": patterns}
+
+    # Tab Cleanup
+    def cleanup_tabs(
+        self,
+        keep_current: bool = True,
+        close_blank: bool = True,
+        url_patterns: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Automatically close stale, blank, or pattern-matching tabs to free memory."""
+        targets = self.list_targets()
+        closed = []
+        for t in targets:
+            if t.get("type") != "page":
+                continue
+            tid = t.get("id")
+            if keep_current and tid == self.target_id:
+                continue
+            url = t.get("url", "").lower()
+            should_close = False
+            if close_blank and (url in ("about:blank", "chrome://newtab/", "") or not url):
+                should_close = True
+            if url_patterns:
+                for pat in url_patterns:
+                    if pat.lower() in url or pat.lower() in t.get("title", "").lower():
+                        should_close = True
+                        break
+            if should_close and tid:
+                try:
+                    self.close_tab_sync(tid)
+                    closed.append({"id": tid, "url": t.get("url"), "title": t.get("title")})
+                except Exception:
+                    pass
+        return {"closed_count": len(closed), "closed_tabs": closed}
+
+    # Performance & Memory Metrics
+    async def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get browser performance, DOM node count, and JS heap memory metrics."""
+        await self.send("Performance.enable")
+        raw = await self.send("Performance.getMetrics")
+        metrics_dict = {}
+        for m in raw.get("metrics", []):
+            metrics_dict[m.get("name")] = m.get("value")
+        
+        heap_used = metrics_dict.get("JSHeapUsedSize", 0)
+        heap_total = metrics_dict.get("JSHeapTotalSize", 0)
+        return {
+            "js_heap_used_mb": round(heap_used / (1024 * 1024), 2),
+            "js_heap_total_mb": round(heap_total / (1024 * 1024), 2),
+            "dom_nodes": int(metrics_dict.get("Nodes", 0)),
+            "documents": int(metrics_dict.get("Documents", 0)),
+            "layouts": int(metrics_dict.get("LayoutCount", 0)),
+            "task_duration_s": round(metrics_dict.get("TaskDuration", 0), 3),
+            "raw_metrics": metrics_dict
+        }
+
+    # Geolocation Emulation
+    async def set_geolocation(self, latitude: float, longitude: float, accuracy: float = 1.0) -> Dict[str, Any]:
+        """Override device geolocation coordinates."""
+        await self.send("Emulation.setGeolocationOverride", {
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy": accuracy
+        })
+        return {"success": True, "latitude": latitude, "longitude": longitude, "accuracy": accuracy}
+
+    # Timezone Emulation
+    async def set_timezone(self, timezone_id: str) -> Dict[str, Any]:
+        """Override browser timezone (e.g. 'America/New_York', 'Europe/Kyiv')."""
+        await self.send("Emulation.setTimezoneOverride", {"timezoneId": timezone_id})
+        return {"success": True, "timezoneId": timezone_id}
+
+    # Permissions
+    async def grant_permissions(self, permissions: List[str], origin: Optional[str] = None) -> Dict[str, Any]:
+        """Grant browser permissions (e.g. 'geolocation', 'notifications', 'clipboardReadWrite')."""
+        if not origin:
+            origin = await self.evaluate("window.location.origin")
+        params = {"permissions": permissions}
+        if origin and origin != "null":
+            params["origin"] = origin
+        await self.send("Browser.grantPermissions", params)
+        return {"success": True, "permissions": permissions, "origin": origin}

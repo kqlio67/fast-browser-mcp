@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .cdp import CDPClient
 
 SNAPSHOT_JS = """(() => {
@@ -182,31 +182,60 @@ SNAPSHOT_JS = """(() => {
         return found;
     }
 
-    let allDescriptors = collectFromRoot(document);
+    const rootSelector = %ROOT_SELECTOR%;
+    const onlyInViewport = %ONLY_IN_VIEWPORT%;
+    const maxElements = %MAX_ELEMENTS%;
 
-    // Recursively collect from accessible iframes
-    const iframes = Array.from(document.querySelectorAll('iframe'));
-    iframes.forEach((iframe, idx) => {
-        try {
-            const iDoc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
-            if (iDoc) {
-                const name = iframe.name || iframe.id || `frame_${idx+1}`;
-                const iframeDescriptors = collectFromRoot(iDoc, `(iframe:${name}) `);
-                allDescriptors = allDescriptors.concat(iframeDescriptors);
-            }
-        } catch(e) {}
-    });
+    let targetRoot = document;
+    if (rootSelector) {
+        const found = document.querySelector(rootSelector);
+        if (found) {
+            targetRoot = found;
+        }
+    }
 
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4'))
+    let allDescriptors = collectFromRoot(targetRoot);
+
+    // Recursively collect from accessible iframes if whole document
+    if (!rootSelector) {
+        const iframes = Array.from(document.querySelectorAll('iframe'));
+        iframes.forEach((iframe, idx) => {
+            try {
+                const iDoc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+                if (iDoc) {
+                    const name = iframe.name || iframe.id || `frame_${idx+1}`;
+                    const iframeDescriptors = collectFromRoot(iDoc, `(iframe:${name}) `);
+                    allDescriptors = allDescriptors.concat(iframeDescriptors);
+                }
+            } catch(e) {}
+        });
+    }
+
+    if (onlyInViewport) {
+        allDescriptors = allDescriptors.filter(d => d.inViewport);
+    }
+
+    const totalFound = allDescriptors.length;
+    let truncated = false;
+    if (maxElements && maxElements > 0 && allDescriptors.length > maxElements) {
+        allDescriptors = allDescriptors.slice(0, maxElements);
+        truncated = true;
+    }
+
+    const headings = Array.from(targetRoot.querySelectorAll('h1, h2, h3, h4'))
         .filter(isVisible)
         .map(h => `${h.tagName}: ${h.innerText.trim()}`);
 
     return {
         title: document.title,
         url: window.location.href,
+        root: rootSelector || "document",
+        in_viewport: onlyInViewport,
         headings: headings,
         interactive: allDescriptors.map(d => d.desc),
-        count: allDescriptors.length
+        count: allDescriptors.length,
+        total_count: totalFound,
+        truncated: truncated
     };
 })()"""
 
@@ -214,7 +243,14 @@ class PageSnapshot:
     def __init__(self, cdp: CDPClient):
         self.cdp = cdp
 
-    async def capture(self) -> Dict[str, Any]:
+    def build_snapshot_js(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> str:
+        js = SNAPSHOT_JS
+        js = js.replace("%ROOT_SELECTOR%", json.dumps(selector))
+        js = js.replace("%ONLY_IN_VIEWPORT%", "true" if in_viewport else "false")
+        js = js.replace("%MAX_ELEMENTS%", json.dumps(max_elements))
+        return js
+
+    async def capture(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> Dict[str, Any]:
         url = await self.cdp.evaluate("window.location.href")
         if url and ("chrome://settings" in url or "chrome://extensions" in url):
             ready_js = """(async () => {
@@ -233,13 +269,16 @@ class PageSnapshot:
                 await self.cdp.evaluate(ready_js, timeout=3.0)
             except Exception:
                 pass
-        data = await self.cdp.evaluate(SNAPSHOT_JS)
+        js = self.build_snapshot_js(selector=selector, in_viewport=in_viewport, max_elements=max_elements)
+        data = await self.cdp.evaluate(js)
         return data
 
-    async def capture_formatted(self) -> str:
-        data = await self.capture()
+    async def capture_formatted(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> str:
+        data = await self.capture(selector=selector, in_viewport=in_viewport, max_elements=max_elements)
+        scope_info = f" [Scope: {data.get('root')}]" if data.get('root') != "document" else ""
+        vp_info = " [Viewport only]" if data.get('in_viewport') else ""
         lines = [
-            f"=== Page: {data.get('title')} ===",
+            f"=== Page: {data.get('title')}{scope_info}{vp_info} ===",
             f"URL: {data.get('url')}",
         ]
         
@@ -249,10 +288,14 @@ class PageSnapshot:
             lines.extend(headings[:10])
 
         interactive = data.get("interactive", [])
-        lines.append(f"\n--- Interactive Elements ({len(interactive)} found) ---")
+        total_count = data.get("total_count", len(interactive))
+        count_label = f"{len(interactive)}" if not data.get("truncated") else f"{len(interactive)} of {total_count}"
+        lines.append(f"\n--- Interactive Elements ({count_label} found) ---")
         if not interactive:
             lines.append("(No interactive elements found)")
         else:
             lines.extend(interactive)
+            if data.get("truncated"):
+                lines.append(f"... ({total_count - len(interactive)} more elements omitted; use selector to focus)")
 
         return "\n".join(lines)

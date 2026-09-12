@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
 [![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
 Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 
@@ -199,16 +199,20 @@ Add Fast Browser MCP as an MCP stdio server executing:
 ### 👁️ Inspection & Snapshots
 | Tool | Description |
 |---|---|
-| `browser_snapshot` | Compact, token-efficient A11y tree with `@ref` markers and Shadow DOM traversal |
+| `browser_snapshot` | Compact, token-efficient A11y tree with `@ref` markers, Shadow DOM traversal, optional CSS selector scoping, and viewport filtering |
 | `browser_get_html` | Extract full document `outerHTML` or save directly to a file |
 | `browser_screenshot` | Capture viewport, element clip, or full-page scrollable screenshot (PNG/JPEG) |
 | `browser_print_to_pdf` | Print page to PDF file with landscape/background options |
 | `browser_eval` | Evaluate arbitrary JavaScript expressions in the page context |
 
-### ⚡ High-Speed Batch Runner
+### ⚡ High-Speed Batch Runner & Resilience
 | Tool | Description |
 |---|---|
-| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, etc. |
+| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `wait_idle`, `block_resources`, `metrics`, `geolocation`, `timezone`, `permissions`, `cleanup_tabs`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, etc. |
+| `browser_wait_for_network_idle` | Wait until all in-flight network requests cease for a stable duration |
+| `browser_block_resources` | Block images, video/audio media, web fonts, or tracking scripts/ads for up to 10x page load speedup |
+| `browser_cleanup_tabs` | Automatically close blank (`about:blank`), stale, or pattern-matching tabs to free RAM |
+| `browser_performance_metrics` | Live memory profiling: JS heap used (MB), DOM nodes, layouts, and task durations |
 
 ### 📡 Network, WebSockets & Storage
 | Tool | Description |
@@ -241,12 +245,12 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_system_info` | Inspect Chrome version, V8 engine, User-Agent, and memory metrics |
 | `browser_set_download_path` | Set download folder and allow downloads without browser dialogs |
 | `browser_grant_permissions` | Grant or reset permissions (`clipboardReadWrite`, `notifications`, `geolocation`) |
+| `browser_set_geolocation` | Override device GPS coordinates (`latitude`, `longitude`, `accuracy`) |
+| `browser_set_timezone` | Emulate local timezone (e.g. `Europe/Kyiv`, `America/New_York`) |
 | `browser_console_logs` | View captured console logs (`console.log`, `error`, `warn`, unhandled exceptions) |
 | `browser_set_viewport` | Configure viewport dimensions and mobile device emulation |
 | `browser_set_user_agent` | Override User-Agent header |
 | `browser_set_headers` | Inject custom HTTP headers into all outgoing requests |
-| `browser_block_urls` | Block URL wildcard patterns to speed up page loads |
-| `browser_emulate_environment` | Emulate geolocation coordinates and timezone |
 
 ---
 
