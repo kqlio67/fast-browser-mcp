@@ -23,3 +23,10 @@ wheels/
 .coverage
 htmlcov/
 screenshot*.png
+*.pdf
+traffic_dump*.json
+traffic_export*.json
+*.log
+.venv/
+venv/
+.DS_Store

@@ -1,143 +1,288 @@
-# ⚡ Fast Browser MCP (v0.2.0)
+# ⚡ Fast Browser MCP
 
-Універсальний, надшвидкий MCP-сервер та CLI-інструмент для автоматизації браузера на базі **Chrome DevTools Protocol (CDP)**.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
+[![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
-Розроблено спеціально для усунення головної проблеми AI-агентів — **затримок очікування між діями (round-trip latency)** та **надлишкового споживання токенів контексту**.
+Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 
----
-
-## 🌟 Ключові особливості
-
-1. **🚀 Multi-Action Batch Execution (`browser_batch`)**:
-   - Виконує цілий ланцюжок дій (`click`, `fill`, `press_key`, `scroll`, `select_option`, `hover`, `wait`, `eval`, `extract`, `snapshot`, `screenshot`, `reload`) за **один виклик**.
-   - Ланцюжок із 4–5 дій виконується за **~0.6 секунди** (замість 20–30 секунд у звичайних MCP).
-
-2. **🏷️ Розумний Token-Efficient Snapshot (`@ref` система)**:
-   - Автоматично розпізнає елементи без звичайного тексту (іконки, SVG, фонові зображення CSS `background-image`, `aria-label`, `title`, `alt`):
-     ```text
-     @1 [td] "cls:nav-drawer__item nav-surface"
-     @2 [td] "Назад"
-     @3 [div] "bg:quest1.png"
-     @4 [div] "bg:questA2.png"
-     @5 [div] "bg:questA3.png"
-     @6 [a] "Сбор Старейшин"
-     ```
-   - Займає **менше 100 токенів** замість важкого HTML на 1–2 МБ!
-   - Клік, введення або скрол виконуються прямо за міткою: `click: "@6"`, `scroll: "@6"`.
-
-3. **🛡️ Автоматична обробка JS-діалогів**:
-   - Автоматично перехоплює та підтверджує діалоги `alert()`, `confirm()`, `prompt()`, запобігаючи «зависанню» вкладки.
-
-4. **⌨️ Повна підтримка клавіатури та скролінгу**:
-   - Натискання клавіш (`Enter`, `Escape`, `Tab`, `Backspace`, `ArrowDown`, `Space`).
-   - Скролінг сторінки на N пікселів або плавний скрол до конкретного елемента.
-
-5. **📑 Керування вкладками**:
-   - Створення нової вкладки (`new_tab`), закриття (`close_tab`), оновлення (`reload`), перемикання (`select_tab`).
-
-6. **🔍 Повноцінний реверс-інжиніринг та перехоплення трафіку**:
-   - Автоматичне логування всіх **HTTP / XHR / Fetch** запитів (URL, метод, POST-параметри, статус).
-   - Читання повного **тіла відповіді сервера** (`get_response_body`).
-   - Перехоплення **WebSocket пакетів** (`sent` / `received`) у реальному часі (ідеально для бойових дій в MMO).
-   - Вивантаження всіх **куків і токенів сесії** (`uid`, `hash`, `PHPSESSID` тощо).
-
-7. **🔒 Робота з твоїм реальним браузером (порт 9222)**:
-   - Підключається до твого активного Chrome (`--remote-debugging-port=9222`).
-   - Зберігає всі куки, паролі та активні сесії. Жодних проблем із захистами (Cloudflare).
+Engineered specifically to eliminate the two biggest bottlenecks in AI web agents: **round-trip LLM inference latency** and **context window token bloat**.
 
 ---
 
-## 📦 Встановлення
+## 🚀 Why Fast Browser MCP?
 
-Працює на стандартному Python 3.10+ (потрібні лише `websockets` та `requests`):
+Traditional AI browser tools suffer from severe limitations:
+- **Round-trip Latency:** Each individual action (click, type, scroll) requires an entire round-trip to the language model (~3–5 seconds per step). A 5-step form fill can take 25–40 seconds.
+- **Context Bloat:** Dumping entire raw HTML trees consumes 10,000–50,000 tokens per step.
+- **Blind to Shadow DOM:** Chrome internal pages (`chrome://settings`, `chrome://extensions`) and modern Web Components are invisible to standard `document.querySelector` tools.
+- **Anti-Bot Roadblocks:** Headless browsers frequently trigger Cloudflare, Captchas, and bot challenges.
+
+**Fast Browser MCP solves all of this:**
+
+| Feature | Fast Browser MCP | Standard Browser MCPs |
+|---|---|---|
+| **Multi-Action Batching (`browser_batch`)** | **Local execution in ~500ms** for 5–10 actions | 20–30 seconds (1 LLM turn per action) |
+| **Snapshot Context Cost** | **< 150 tokens** via numbered `@ref` tree | 10,000–50,000 tokens (raw HTML/DOM) |
+| **Shadow DOM & Web Components** | **Deep recursive traversal** into all `shadowRoot` levels | ❌ Incomplete or completely blind |
+| **Chrome System Pages** | Full control over `chrome://settings`, `chrome://extensions`, etc. | ❌ Unsupported |
+| **Extension Management** | List, enable, disable, reload, and inspect extensions | ❌ Unsupported |
+| **Real Browser Integration** | Attaches to active Chrome session on port 9222 (bypasses Cloudflare) | Often isolated / detected headless |
+| **Reverse Engineering & Traffic** | Live WebSocket frames, XHR request/response bodies, cookie extraction | Usually basic console logs only |
+
+---
+
+## 🌟 Core Highlights
+
+### 1. 🏎️ Ultra-Fast Batch Execution (`browser_batch`)
+Execute an entire pipeline of actions locally in a single MCP round-trip:
+```json
+{
+  "steps": [
+    {"action": "navigate", "url": "https://example.com/login"},
+    {"action": "fill", "ref": "@1", "text": "agent@example.com"},
+    {"action": "fill", "ref": "@2", "text": "secret123"},
+    {"action": "click", "ref": "@3"},
+    {"action": "wait", "ms": 500},
+    {"action": "snapshot"}
+  ]
+}
+```
+*Result: Executed entirely over direct local WebSocket in ~600ms total!*
+
+### 2. 🏷️ Token-Efficient Numbered `@ref` Snapshot
+Captures a compact accessibility tree with numbered target handles (`@1`, `@2`, ...). Intelligently identifies non-textual UI elements:
+- Icons, SVG graphics, and title labels
+- CSS `background-image` sprites (e.g. `bg:quest1.png`)
+- ARIA roles, input states, and placeholder texts
+- Filters out internal presentation noise (`cr-ripple`, `path`, `cr-icon` inside buttons)
+
+```text
+=== Page: Extensions ===
+URL: chrome://extensions/
+
+--- Interactive Elements (12 found) ---
+@1 [button] "Search extensions"
+@2 [input] [type=search]
+@3 [button] [ checked]
+@4 [button] "Load unpacked"
+@5 [button] "Pack extension"
+@6 [button] "Update"
+@7 [menuitem] "My extensions" -> /
+@8 [menuitem] "Keyboard shortcuts" -> /shortcuts
+@9 [button] "Details"
+@10 [button] "Remove"
+@11 [button] "Reload"
+@12 [button] [ checked]
+```
+
+### 3. 🌐 Full Browser Window & System Management
+- **Window Bounds:** Retrieve and set window states (`normal`, `minimized`, `maximized`, `fullscreen`) or exact pixel dimensions and coordinates.
+- **System Pages:** Direct navigation to `chrome://settings`, `chrome://extensions`, `chrome://downloads`, `chrome://history`, `chrome://flags`, `chrome://version`, and more.
+- **Extension Controls:** Query all installed Chrome extensions, enable/disable them, reload extensions, or open options and popup pages.
+- **Download Management:** Automatically configure download paths without interactive prompt dialogs.
+- **Permissions:** Programmatically grant or reset browser permissions (`clipboardReadWrite`, `notifications`, `geolocation`).
+
+### 4. 🔬 Network & Real-Time WebSocket Inspection
+- Inspect intercepted HTTP/XHR/Fetch requests, headers, and POST payloads.
+- Fetch raw response bodies (JSON, HTML, binary).
+- Real-time **WebSocket frame capture** (`sent` / `received`), critical for game automation, real-time sync, and bot development.
+- One-click traffic dump export to structured JSON.
+
+---
+
+## 📦 Installation
+
+### Requirements
+- Python 3.10 or newer
+- Google Chrome, Chromium, or Brave
+
 ```bash
-pip install websockets requests
+# Clone the repository
+git clone https://github.com/kqlio67/fast-browser-mcp.git
+cd fast-browser-mcp
+
+# Install dependencies
+pip install -r requirements.txt
+
+# (Optional) Install editable package
+pip install -e .
 ```
 
 ---
 
-## ⚙️ Підключення як MCP Server
+## ⚙️ Quickstart & Setup
 
-Додай у свій `mcp_config.json` (Antigravity, Claude Desktop, Cursor тощо):
+### 1. Launch Chrome with Remote Debugging
+Start your browser with `--remote-debugging-port=9222`:
 
+**Linux:**
+```bash
+google-chrome --remote-debugging-port=9222 &
+# Or if using Chromium / Helium:
+chromium --remote-debugging-port=9222 &
+```
+
+**macOS:**
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 &
+```
+
+**Windows:**
+```cmd
+chrome.exe --remote-debugging-port=9222
+```
+
+*(Optional: Use `--user-data-dir="/tmp/chrome_dev_session"` to run alongside your personal browser profile without conflicts).*
+
+---
+
+### 2. Connect to Your MCP Client
+
+#### Google Antigravity
+```bash
+agy mcp add --env PYTHONPATH=/path/to/fast-browser-mcp fast-browser python3 -m fast_browser.server
+```
+
+#### Claude Desktop (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
     "fast-browser": {
       "command": "python3",
-      "args": [
-        "-m",
-        "fast_browser.server"
-      ],
+      "args": ["-m", "fast_browser.server"],
       "env": {
-        "PYTHONPATH": "/home/qumhab/Documents/Projects/fast-browser-mcp"
+        "PYTHONPATH": "/path/to/fast-browser-mcp"
       }
     }
   }
 }
 ```
 
-### Доступні інструменти:
-| Інструмент | Опис |
-|---|---|
-| `browser_list_tabs` | Список відкритих вкладок (id, title, url) |
-| `browser_select_tab` | Перемикання на потрібну вкладку за назвою чи URL |
-| `browser_new_tab` | Відкрити нову вкладку з URL |
-| `browser_close_tab` | Закрити вкладку за ID (або активну) |
-| `browser_reload` | Перезавантажити активну сторінку |
-| `browser_snapshot` | Розумний компактний знімок сторінки з номерами `@1`, `@2`... |
-| `browser_batch` | **Пакетне виконання дій за мілісекунди** |
-| `browser_eval` | Виконання JavaScript у контексті сторінки |
-| `browser_click` | Клік по `@ref` або CSS-селектору |
-| `browser_fill` | Введення тексту в поле за `@ref` чи селектором |
-| `browser_press_key` | Натискання клавіші (`Enter`, `Escape`, `Tab` тощо) |
-| `browser_scroll` | Скролінг сторінки або скрол до конкретного `@ref` |
-| `browser_navigate` | Перехід за адресою |
-| `browser_console_logs` | **Логи консолі браузера (console.log, console.error, exceptions)** |
-| `browser_get_storage` | **Вивантаження localStorage та sessionStorage** |
-| `browser_export_traffic` | **Експорт усього перехопленого трафіку (HTTP + WebSockets) у JSON-файл** |
-| `browser_set_viewport` | **Емуляція розміру екрану (мобільний / десктоп) та DPI** |
-| `browser_upload_file` | **Нативне завантаження файлів у `<input type='file'>`** |
-| `browser_network_requests` | **Список перехоплених HTTP/XHR запитів (POST/GET/статус)** |
-| `browser_network_get_response` | **Тіло відповіді сервера (JSON/HTML) та деталі запиту** |
-| `browser_websocket_messages` | **WebSocket пакети гри в реальному часі (sent/received)** |
-| `browser_get_cookies` | **Отримання куків, токенів авторизації та сесій** |
-| `browser_screenshot` | Збереження скріншоту у файл |
+#### Cursor / Windsurf
+Add Fast Browser MCP as an MCP stdio server executing:
+- **Command:** `python3`
+- **Args:** `["-m", "fast_browser.server"]`
+- **Environment:** `PYTHONPATH=/path/to/fast-browser-mcp`
 
 ---
 
-## 💻 Використання через CLI
+## 🛠️ Complete Tool Reference (30+ Tools)
+
+### 📑 Tab & Navigation
+| Tool | Description |
+|---|---|
+| `browser_list_tabs` | List all open browser tabs (ID, title, URL) |
+| `browser_select_tab` | Switch active connection to a tab by title or URL query |
+| `browser_new_tab` | Open a new tab with a given URL |
+| `browser_close_tab` | Close a tab by target ID (or close current tab) |
+| `browser_navigate` | Navigate active tab to a URL |
+| `browser_reload` | Reload the page (with optional `ignore_cache` option) |
+
+### 🎯 Interaction & Actions
+| Tool | Description |
+|---|---|
+| `browser_click` | Click an element by snapshot ref (`@1`, `@2`) or CSS selector |
+| `browser_fill` | Type text into an input element by ref or CSS selector |
+| `browser_press_key` | Dispatch keyboard key event (`Enter`, `Escape`, `Tab`, `ArrowDown`, etc.) |
+| `browser_scroll` | Scroll page by $(\Delta x, \Delta y)$ or scroll element into view |
+| `browser_mouse` | Advanced mouse operations: `double_click`, `right_click`, `move`, `drag_and_drop` |
+| `browser_upload_file` | Upload files natively into `<input type='file'>` elements via CDP |
+
+### 👁️ Inspection & Snapshots
+| Tool | Description |
+|---|---|
+| `browser_snapshot` | Compact, token-efficient A11y tree with `@ref` markers and Shadow DOM traversal |
+| `browser_get_html` | Extract full document `outerHTML` or save directly to a file |
+| `browser_screenshot` | Capture viewport, element clip, or full-page scrollable screenshot (PNG/JPEG) |
+| `browser_print_to_pdf` | Print page to PDF file with landscape/background options |
+| `browser_eval` | Evaluate arbitrary JavaScript expressions in the page context |
+
+### ⚡ High-Speed Batch Runner
+| Tool | Description |
+|---|---|
+| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip |
+
+### 📡 Network, WebSockets & Storage
+| Tool | Description |
+|---|---|
+| `browser_network_requests` | List captured HTTP/XHR/Fetch requests filtered by type or URL pattern |
+| `browser_network_get_response` | Inspect headers, POST payload, and retrieve server response bodies |
+| `browser_websocket_messages` | Monitor real-time WebSocket frames (`sent` / `received`) |
+| `browser_get_cookies` | Retrieve all cookies and authentication tokens for current origin |
+| `browser_set_cookie` | Inject cookies into the browser context |
+| `browser_get_storage` | Inspect and dump `localStorage` and `sessionStorage` |
+| `browser_clear_storage` | Clear browser cache and/or cookies |
+| `browser_export_traffic` | Export captured HTTP & WebSocket traffic into a structured JSON file |
+
+### 🖥️ Browser & System Management
+| Tool | Description |
+|---|---|
+| `browser_window` | Inspect or set window bounds (coordinates, width, height) and state (`maximized`, `minimized`, `fullscreen`, `normal`) |
+| `browser_open_system_page` | Open or switch to Chrome system pages (`settings`, `extensions`, `downloads`, `history`, `flags`, etc.) |
+| `browser_list_extensions` | Query all installed Chrome extensions (IDs, names, versions, enabled status) |
+| `browser_extension_action` | Manage extensions: `enable`, `disable`, `reload`, `options`, `popup` |
+| `browser_system_info` | Inspect Chrome version, V8 engine, User-Agent, and memory metrics |
+| `browser_set_download_path` | Set download folder and allow downloads without browser dialogs |
+| `browser_grant_permissions` | Grant or reset permissions (`clipboardReadWrite`, `notifications`, `geolocation`) |
+| `browser_console_logs` | View captured console logs (`console.log`, `error`, `warn`, unhandled exceptions) |
+| `browser_set_viewport` | Configure viewport dimensions and mobile device emulation |
+| `browser_set_user_agent` | Override User-Agent header |
+| `browser_set_headers` | Inject custom HTTP headers into all outgoing requests |
+| `browser_block_urls` | Block URL wildcard patterns to speed up page loads |
+| `browser_emulate_environment` | Emulate geolocation coordinates and timezone |
+
+---
+
+## 💻 CLI Usage
+
+Fast Browser MCP also includes a complete standalone CLI for manual operations and shell scripting:
 
 ```bash
-cd /home/qumhab/Documents/Projects/fast-browser-mcp
-
-# Список відкритих вкладок
+# List open tabs
 python3 -m fast_browser.cli list-tabs
 
-# Знімок сторінки зі смарт-мітками
+# Take a snapshot of a tab
 python3 -m fast_browser.cli --tab mmobitva snapshot
 
-# Натискання клавіші Enter
-python3 -m fast_browser.cli --tab mmobitva press-key Enter
+# Inspect browser window geometry
+python3 -m fast_browser.cli window
 
-# Скрол сторінки вниз на 300px
-python3 -m fast_browser.cli --tab mmobitva scroll --delta-y 300
+# Maximize browser window
+python3 -m fast_browser.cli window --state maximized
 
-# Пакетний ланцюжок дій (Snapshot -> Click -> Wait -> Snapshot)
-python3 -m fast_browser.cli --tab mmobitva batch '[
+# Open Chrome Settings
+python3 -m fast_browser.cli system-page settings
+
+# List installed extensions
+python3 -m fast_browser.cli extensions
+
+# Inspect browser & CDP protocol versions
+python3 -m fast_browser.cli system-info
+
+# Run high-speed batch actions
+python3 -m fast_browser.cli --tab mytab batch '[
   {"action": "snapshot"},
-  {"action": "click", "ref": "@6"},
-  {"action": "wait", "ms": 300},
+  {"action": "click", "ref": "@2"},
+  {"action": "wait", "ms": 200},
   {"action": "snapshot"}
 ]'
 ```
 
 ---
 
-## 📊 Бенчмарк швидкості
+## 🧪 Testing
 
-| Операція | Звичайний MCP через LLM | Fast Browser Batch |
-|---|---|---|
-| 1 дія (клік / eval) | ~3–5 сек | **10–25 мс** |
-| Ланцюжок з 4 дій | ~20–30 сек | **0.6 сек** |
-| Споживання токенів | ~10,000–50,000 токенів | **< 150 токенів** |
+Run the automated test suite against a running Chrome instance on port 9222:
+
+```bash
+PYTHONPATH=. python3 -m unittest discover -s tests
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
