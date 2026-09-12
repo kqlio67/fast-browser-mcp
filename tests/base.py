@@ -62,18 +62,22 @@ class TestBrowserManager:
 
         url = f"http://127.0.0.1:{cls._port}/json/version"
         ready = False
-        for _ in range(50):
+        for attempt in range(100):
             try:
                 r = requests.get(url, timeout=0.5)
                 if r.status_code == 200:
                     ready = True
                     break
             except Exception:
-                time.sleep(0.1)
+                if cls._proc and cls._proc.poll() is not None:
+                    # Process died unexpectedly, capture exit code
+                    break
+                time.sleep(0.2)
 
         if not ready:
+            proc_status = f"exit_code={cls._proc.poll() if cls._proc else 'N/A'}"
             cls.cleanup()
-            raise RuntimeError(f"Failed to start isolated headless test browser on port {cls._port}")
+            raise RuntimeError(f"Failed to start isolated headless test browser on port {cls._port} ({proc_status})")
 
         os.environ["CDP_PORT"] = str(cls._port)
         atexit.register(cls.cleanup)
