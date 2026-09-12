@@ -176,6 +176,52 @@ async def run_cli():
     perm_p.add_argument("--origin", help="Target origin")
     perm_p.add_argument("--reset", action="store_true", help="Reset all permissions")
 
+    # back
+    back_p = subparsers.add_parser("back", help="Navigate backward in history")
+    back_p.add_argument("--delta", type=int, default=1, help="Steps backward")
+
+    # forward
+    fwd_p = subparsers.add_parser("forward", help="Navigate forward in history")
+    fwd_p.add_argument("--delta", type=int, default=1, help="Steps forward")
+
+    # history
+    subparsers.add_parser("history", help="Show tab navigation history entries")
+
+    # stealth
+    stealth_p = subparsers.add_parser("stealth", help="Toggle anti-bot stealth mode")
+    stealth_p.add_argument("--disable", action="store_true", help="Disable stealth mode")
+
+    # throttling
+    throt_p = subparsers.add_parser("throttling", help="Emulate network conditions")
+    throt_p.add_argument("profile", choices=["offline", "slow3g", "fast3g", "4g", "none"], help="Network profile")
+
+    # theme
+    theme_p = subparsers.add_parser("theme", help="Emulate color scheme (dark, light)")
+    theme_p.add_argument("theme", choices=["dark", "light", "no-preference"], help="Theme choice")
+
+    # zoom
+    zoom_p = subparsers.add_parser("zoom", help="Adjust page zoom scale")
+    zoom_p.add_argument("scale", type=float, help="Scale factor (e.g. 0.75, 1.0, 1.25, 1.5)")
+
+    # mute
+    mute_p = subparsers.add_parser("mute", help="Mute or unmute tab audio")
+    mute_p.add_argument("--unmute", action="store_true", help="Unmute audio")
+
+    # find
+    find_p = subparsers.add_parser("find", help="Find text on page (Ctrl+F)")
+    find_p.add_argument("query", help="Text to search")
+
+    # clipboard
+    clip_p = subparsers.add_parser("clipboard", help="Read or write clipboard")
+    clip_p.add_argument("--write", help="Text to write to clipboard")
+
+    # indexeddb
+    subparsers.add_parser("indexeddb", help="Inspect IndexedDB databases")
+
+    # ssl-ignore
+    ssl_p = subparsers.add_parser("ssl-ignore", help="Bypass SSL certificate errors")
+    ssl_p.add_argument("--enforce", action="store_true", help="Do not ignore SSL errors")
+
     args = parser.parse_args()
 
     cdp = CDPClient(host=args.host, port=args.port)
@@ -377,6 +423,58 @@ async def run_cli():
             "full_page": args.full_page,
             "selector": args.selector
         }])
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "back":
+        res = await cdp.go_back(delta=args.delta)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "forward":
+        res = await cdp.go_forward(delta=args.delta)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "history":
+        hist = await cdp.get_navigation_history()
+        print(json.dumps(hist, ensure_ascii=False, indent=2))
+
+    elif args.command == "stealth":
+        res = await cdp.set_stealth_mode(enabled=not args.disable)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "throttling":
+        res = await cdp.set_network_throttling(profile=args.profile)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "theme":
+        res = await cdp.set_media_theme(theme=args.theme)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "zoom":
+        res = await cdp.set_page_zoom(scale=args.scale)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "mute":
+        res = await cdp.set_audio_muted(muted=not args.unmute)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "find":
+        res = await cdp.find_in_page(query=args.query)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "clipboard":
+        if args.write is not None:
+            await cdp.set_clipboard_text(args.write)
+            print(f"Copied to clipboard: {args.write[:50]}")
+        else:
+            text = await cdp.get_clipboard_text()
+            print(text)
+
+    elif args.command == "indexeddb":
+        idb = await cdp.get_indexeddb_data()
+        print(json.dumps(idb, ensure_ascii=False, indent=2))
+
+    elif args.command == "ssl-ignore":
+        res = await cdp.set_ignore_certificate_errors(ignore=not args.enforce)
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     await cdp.close()

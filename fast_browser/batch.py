@@ -504,6 +504,94 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["browser_version"] = ver
 
+                elif action == "back":
+                    delta = step.get("delta", 1)
+                    res = await self.cdp.go_back(delta=delta)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Navigated back {delta} step(s): {res.get('url')}"
+
+                elif action == "forward":
+                    delta = step.get("delta", 1)
+                    res = await self.cdp.go_forward(delta=delta)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Navigated forward {delta} step(s): {res.get('url')}"
+
+                elif action == "history":
+                    hist = await self.cdp.get_navigation_history()
+                    step_res["status"] = "ok"
+                    step_res["history"] = hist
+
+                elif action == "preload_script":
+                    source = step.get("source", "")
+                    ident = await self.cdp.add_preload_script(source)
+                    step_res["status"] = "ok"
+                    step_res["identifier"] = ident
+                    step_res["detail"] = f"Added preload script (id={ident})"
+
+                elif action == "stealth":
+                    enabled = step.get("enabled", True)
+                    res = await self.cdp.set_stealth_mode(enabled=enabled)
+                    step_res["status"] = "ok"
+                    step_res["stealth"] = res
+
+                elif action == "throttling":
+                    prof = step.get("profile", "none")
+                    res = await self.cdp.set_network_throttling(
+                        profile=prof,
+                        offline=step.get("offline"),
+                        latency=step.get("latency"),
+                        download_throughput=step.get("download_throughput"),
+                        upload_throughput=step.get("upload_throughput")
+                    )
+                    step_res["status"] = "ok"
+                    step_res["throttling"] = res
+
+                elif action == "theme":
+                    theme = step.get("theme", "dark")
+                    res = await self.cdp.set_media_theme(theme=theme)
+                    step_res["status"] = "ok"
+                    step_res["theme"] = res
+
+                elif action == "zoom":
+                    scale = step.get("scale", 1.0)
+                    res = await self.cdp.set_page_zoom(scale=scale)
+                    step_res["status"] = "ok"
+                    step_res["zoom"] = res
+
+                elif action == "mute":
+                    muted = step.get("muted", True)
+                    res = await self.cdp.set_audio_muted(muted=muted)
+                    step_res["status"] = "ok"
+                    step_res["muted"] = res
+
+                elif action == "clipboard":
+                    subact = step.get("action_type", "read")
+                    if subact == "write":
+                        text = step.get("text", "")
+                        await self.cdp.set_clipboard_text(text)
+                        step_res["detail"] = f"Wrote to clipboard: {text[:50]}"
+                    else:
+                        clip_text = await self.cdp.get_clipboard_text()
+                        step_res["clipboard_text"] = clip_text
+                    step_res["status"] = "ok"
+
+                elif action == "find":
+                    query = step.get("query", "")
+                    res = await self.cdp.find_in_page(query=query, scroll_to_first=step.get("scroll", True))
+                    step_res["status"] = "ok"
+                    step_res["find_result"] = res
+
+                elif action == "indexeddb":
+                    idb = await self.cdp.get_indexeddb_data()
+                    step_res["status"] = "ok"
+                    step_res["indexeddb"] = idb
+
+                elif action == "ssl_ignore":
+                    ignore = step.get("ignore", True)
+                    res = await self.cdp.set_ignore_certificate_errors(ignore=ignore)
+                    step_res["status"] = "ok"
+                    step_res["ssl_ignore"] = res
+
                 else:
                     raise ValueError(f"Unknown action: {action!r}")
 

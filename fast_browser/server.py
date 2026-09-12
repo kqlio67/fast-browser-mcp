@@ -555,6 +555,162 @@ TOOLS = [
             },
             "required": []
         }
+    },
+    {
+        "name": "browser_back",
+        "description": "Navigate backward in browser history (back button).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "delta": {"type": "integer", "default": 1, "description": "Number of steps backward"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_forward",
+        "description": "Navigate forward in browser history (forward button).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "delta": {"type": "integer", "default": 1, "description": "Number of steps forward"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_history",
+        "description": "Retrieve tab navigation history entries and current index.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_add_preload_script",
+        "description": "Inject custom JavaScript to run on every new document before page scripts load (hooks / Tampermonkey).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "JavaScript source code to evaluate"}
+            },
+            "required": ["source"]
+        }
+    },
+    {
+        "name": "browser_remove_preload_script",
+        "description": "Remove a previously registered preload script by its identifier.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "identifier": {"type": "string", "description": "Script identifier returned by browser_add_preload_script"}
+            },
+            "required": ["identifier"]
+        }
+    },
+    {
+        "name": "browser_stealth_mode",
+        "description": "Enable or disable comprehensive anti-detection stealth overrides (masks navigator.webdriver, plugins, languages).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean", "default": True, "description": "Enable or disable stealth mode"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_network_throttling",
+        "description": "Emulate network profiles ('offline', 'slow3g', 'fast3g', '4g', 'none') or custom bandwidth and latency.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "profile": {"type": "string", "enum": ["offline", "slow3g", "fast3g", "4g", "none"], "default": "none"},
+                "offline": {"type": "boolean"},
+                "latency": {"type": "integer", "description": "Latency in milliseconds"},
+                "download_throughput": {"type": "integer", "description": "Bytes per second"},
+                "upload_throughput": {"type": "integer", "description": "Bytes per second"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_set_media_theme",
+        "description": "Emulate system color scheme on page: 'dark', 'light', or 'no-preference'.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "theme": {"type": "string", "enum": ["dark", "light", "no-preference"], "default": "dark"}
+            },
+            "required": ["theme"]
+        }
+    },
+    {
+        "name": "browser_set_page_zoom",
+        "description": "Adjust page zoom level (e.g. 0.5 for 50%, 1.0 for 100%, 1.5 for 150%).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scale": {"type": "number", "default": 1.0, "description": "Zoom scale factor"}
+            },
+            "required": ["scale"]
+        }
+    },
+    {
+        "name": "browser_mute_tab",
+        "description": "Mute or unmute all media audio playback in the active tab.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "muted": {"type": "boolean", "default": True, "description": "Whether to mute audio"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_find_in_page",
+        "description": "Find text on page (Ctrl+F): count matches, extract context snippets, and scroll to first match.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Text to search for"},
+                "scroll_to_first": {"type": "boolean", "default": True, "description": "Scroll to first match"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "browser_clipboard",
+        "description": "Read or write to the system clipboard.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["read", "write"], "default": "read"},
+                "text": {"type": "string", "description": "Text to copy (for write action)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_get_indexeddb",
+        "description": "Inspect all IndexedDB databases and object stores for current origin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_set_ignore_certificate_errors",
+        "description": "Bypass or enforce SSL/TLS certificate warnings on HTTPS websites.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ignore": {"type": "boolean", "default": True, "description": "Ignore certificate errors"}
+            },
+            "required": []
+        }
     }
 ]
 
@@ -833,6 +989,86 @@ class MCPServer:
             await self.cdp.grant_permissions(perms, origin=origin)
             return f"Granted permissions: {perms}"
 
+        elif name == "browser_back":
+            delta = args.get("delta", 1)
+            res = await self.cdp.go_back(delta=delta)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_forward":
+            delta = args.get("delta", 1)
+            res = await self.cdp.go_forward(delta=delta)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_history":
+            hist = await self.cdp.get_navigation_history()
+            return json.dumps(hist, ensure_ascii=False, indent=2)
+
+        elif name == "browser_add_preload_script":
+            source = args.get("source", "")
+            ident = await self.cdp.add_preload_script(source)
+            return f"Preload script registered (identifier={ident})"
+
+        elif name == "browser_remove_preload_script":
+            ident = args.get("identifier", "")
+            await self.cdp.remove_preload_script(ident)
+            return f"Preload script removed (identifier={ident})"
+
+        elif name == "browser_stealth_mode":
+            enabled = args.get("enabled", True)
+            res = await self.cdp.set_stealth_mode(enabled=enabled)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_network_throttling":
+            prof = args.get("profile", "none")
+            res = await self.cdp.set_network_throttling(
+                profile=prof,
+                offline=args.get("offline"),
+                latency=args.get("latency"),
+                download_throughput=args.get("download_throughput"),
+                upload_throughput=args.get("upload_throughput")
+            )
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_set_media_theme":
+            theme = args.get("theme", "dark")
+            res = await self.cdp.set_media_theme(theme=theme)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_set_page_zoom":
+            scale = args.get("scale", 1.0)
+            res = await self.cdp.set_page_zoom(scale=scale)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_mute_tab":
+            muted = args.get("muted", True)
+            res = await self.cdp.set_audio_muted(muted=muted)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_find_in_page":
+            query = args.get("query", "")
+            scroll = args.get("scroll_to_first", True)
+            res = await self.cdp.find_in_page(query=query, scroll_to_first=scroll)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_clipboard":
+            action = args.get("action", "read")
+            if action == "write":
+                text = args.get("text", "")
+                await self.cdp.set_clipboard_text(text)
+                return f"Clipboard updated: {text[:60]}"
+            else:
+                clip_text = await self.cdp.get_clipboard_text()
+                return clip_text
+
+        elif name == "browser_get_indexeddb":
+            idb = await self.cdp.get_indexeddb_data()
+            return json.dumps(idb, ensure_ascii=False, indent=2)
+
+        elif name == "browser_set_ignore_certificate_errors":
+            ignore = args.get("ignore", True)
+            res = await self.cdp.set_ignore_certificate_errors(ignore=ignore)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -875,7 +1111,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.5.0"
+                                "version": "0.6.0"
                             }
                         }
                     }

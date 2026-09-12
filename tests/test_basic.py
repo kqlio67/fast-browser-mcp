@@ -7,6 +7,14 @@ from fast_browser.batch import BatchRunner
 class TestFastBrowser(unittest.TestCase):
     def setUp(self):
         self.cdp = CDPClient()
+        self.tab = self.cdp.new_tab_sync("about:blank")
+        self.tab_id = self.tab["id"]
+
+    def tearDown(self):
+        try:
+            self.cdp.close_tab_sync(self.tab_id)
+        except Exception:
+            pass
 
     def test_list_targets(self):
         targets = self.cdp.list_targets()
@@ -15,7 +23,7 @@ class TestFastBrowser(unittest.TestCase):
 
     def test_snapshot_and_eval(self):
         async def run():
-            await self.cdp.connect()
+            await self.cdp.connect(target_id=self.tab_id)
             title = await self.cdp.evaluate("document.title")
             self.assertIsInstance(title, str)
             
@@ -28,7 +36,7 @@ class TestFastBrowser(unittest.TestCase):
 
     def test_batch_execution(self):
         async def run():
-            await self.cdp.connect()
+            await self.cdp.connect(target_id=self.tab_id)
             batch = BatchRunner(self.cdp)
             steps = [
                 {"action": "eval", "script": "1 + 1"},

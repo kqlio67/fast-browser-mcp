@@ -50,18 +50,24 @@ class TestBrowserManagement(unittest.TestCase):
 
     def test_batch_browser_management(self):
         async def run():
-            await self.cdp.connect()
-            batch = BatchRunner(self.cdp)
-            steps = [
-                {"action": "system_info"},
-                {"action": "window"}
-            ]
-            res = await batch.execute(steps)
-            self.assertTrue(res["success"])
-            self.assertEqual(res["steps_executed"], 2)
-            self.assertIn("browser_version", res["results"][0])
-            self.assertIn("window", res["results"][1])
-            await self.cdp.close()
+            tab = self.cdp.new_tab_sync("about:blank")
+            tid = tab.get("id")
+            try:
+                await self.cdp.connect(target_id=tid)
+                batch = BatchRunner(self.cdp)
+                steps = [
+                    {"action": "system_info"},
+                    {"action": "window"}
+                ]
+                res = await batch.execute(steps)
+                self.assertTrue(res["success"])
+                self.assertEqual(res["steps_executed"], 2)
+                self.assertIn("browser_version", res["results"][0])
+                self.assertIn("window", res["results"][1])
+                await self.cdp.close()
+            finally:
+                if tid:
+                    self.cdp.close_tab_sync(tid)
         asyncio.run(run())
 
 if __name__ == "__main__":

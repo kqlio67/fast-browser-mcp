@@ -65,10 +65,19 @@ class CDPClient:
                 return p
         return None
 
-    async def connect(self, target_query: Optional[str] = None):
-        target = self.find_target(target_query)
+    def get_target_by_id(self, target_id: str) -> Optional[Dict[str, Any]]:
+        for t in self.list_targets():
+            if t.get("id") == target_id:
+                return t
+        return None
+
+    async def connect(self, target_query: Optional[str] = None, target_id: Optional[str] = None):
+        if target_id:
+            target = self.get_target_by_id(target_id)
+        else:
+            target = self.find_target(target_query)
         if not target:
-            raise RuntimeError(f"No matching browser page found (query={target_query!r}) on {self.host}:{self.port}")
+            raise RuntimeError(f"No matching browser page found (query={target_query!r}, target_id={target_id!r}) on {self.host}:{self.port}")
         
         self.target_id = target.get("id")
         self.ws_url = target.get("webSocketDebuggerUrl")
@@ -187,17 +196,23 @@ class CDPClient:
         await self.wait_for_dom_ready(timeout=timeout)
         return res
 
-    async def new_tab(self, url: str = "about:blank") -> Dict[str, Any]:
+    def new_tab_sync(self, url: str = "about:blank") -> Dict[str, Any]:
         res = requests.put(f"http://{self.host}:{self.port}/json/new?{url}", timeout=5)
         res.raise_for_status()
         return res.json()
 
-    async def close_tab(self, target_id: Optional[str] = None) -> bool:
+    def close_tab_sync(self, target_id: Optional[str] = None) -> bool:
         tid = target_id or self.target_id
         if not tid:
             return False
         res = requests.get(f"http://{self.host}:{self.port}/json/close/{tid}", timeout=5)
         return res.status_code == 200
+
+    async def new_tab(self, url: str = "about:blank") -> Dict[str, Any]:
+        return self.new_tab_sync(url)
+
+    async def close_tab(self, target_id: Optional[str] = None) -> bool:
+        return self.close_tab_sync(target_id)
 
     async def wait_for_dom_ready(self, timeout: float = 10.0):
         t0 = asyncio.get_running_loop().time()
@@ -712,3 +727,275 @@ class CDPClient:
         res = await self.send("Performance.getMetrics")
         metrics_list = res.get("metrics", [])
         return {m["name"]: m["value"] for m in metrics_list}
+
+    # Navigation & History
+    async def go_back(self, delta: int = 1) -> Dict[str, Any]:
+        """Navigate backward in browser history."""
+        hist = await self.send("Page.getNavigationHistory")
+        curr_idx = hist.get("currentIndex", 0)
+        target_idx = curr_idx - delta
+        entries = hist.get("entries", [])
+        if target_idx < 0 or target_idx >= len(entries):
+            raise IndexError(f"Cannot go back {delta} step(s) (current index is {curr_idx})")
+        entry_id = entries[target_idx]["id"]
+        await self.send("Page.navigateToHistoryEntry", {"entryId": entry_id})
+        await self.wait_for_dom_ready()
+        return {"status": "ok", "url": entries[target_idx].get("url"), "title": entries[target_idx].get("title")}
+
+    async def go_forward(self, delta: int = 1) -> Dict[str, Any]:
+        """Navigate forward in browser history."""
+        hist = await self.send("Page.getNavigationHistory")
+        curr_idx = hist.get("currentIndex", 0)
+        target_idx = curr_idx + delta
+        entries = hist.get("entries", [])
+        if target_idx < 0 or target_idx >= len(entries):
+            raise IndexError(f"Cannot go forward {delta} step(s) (current index is {curr_idx}, total entries: {len(entries)})")
+        entry_id = entries[target_idx]["id"]
+        await self.send("Page.navigateToHistoryEntry", {"entryId": entry_id})
+        await self.wait_for_dom_ready()
+        return {"status": "ok", "url": entries[target_idx].get("url"), "title": entries[target_idx].get("title")}
+
+    async def get_navigation_history(self) -> Dict[str, Any]:
+        """Retrieve full navigation history with current index and entries."""
+        hist = await self.send("Page.getNavigationHistory")
+        return {
+            "current_index": hist.get("currentIndex", 0),
+            "entries": hist.get("entries", [])
+        }
+
+    # Preload Scripts & Stealth
+    async def add_preload_script(self, source: str) -> str:
+        """Inject a JavaScript snippet to evaluate on every new document before page scripts."""
+        res = await self.send("Page.addScriptToEvaluateOnNewDocument", {"source": source})
+        return res.get("identifier", "")
+
+    async def remove_preload_script(self, identifier: str) -> bool:
+        """Remove a previously registered preload script by its identifier."""
+        await self.send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
+        return True
+
+    async def set_stealth_mode(self, enabled: bool = True) -> Dict[str, Any]:
+        """Inject comprehensive anti-detection and stealth overrides (navigator.webdriver, plugins, languages)."""
+        stealth_js = """(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+            window.chrome = window.chrome || {
+                app: { isInstalled: false },
+                runtime: { PlatformOs: { LINUX: 'linux' }, PlatformArch: { X86_64: 'x86-64' } }
+            };
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'], configurable: true });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5], configurable: true });
+        })()"""
+        if enabled:
+            ident = await self.add_preload_script(stealth_js)
+            await self.evaluate(stealth_js)
+            return {"status": "ok", "stealth": True, "identifier": ident}
+        return {"status": "ok", "stealth": False}
+
+    # Network Throttling & Security
+    async def set_network_throttling(
+        self,
+        profile: str = "none",
+        offline: Optional[bool] = None,
+        latency: Optional[int] = None,
+        download_throughput: Optional[int] = None,
+        upload_throughput: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Emulate network conditions ('offline', 'slow3g', 'fast3g', '4g', 'none') or custom bandwidth."""
+        profiles = {
+            "offline": {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
+            "slow3g": {"offline": False, "latency": 400, "downloadThroughput": (500 * 1024) // 8, "uploadThroughput": (500 * 1024) // 8},
+            "fast3g": {"offline": False, "latency": 150, "downloadThroughput": (1600 * 1024) // 8, "uploadThroughput": (750 * 1024) // 8},
+            "4g": {"offline": False, "latency": 20, "downloadThroughput": 10 * 1024 * 1024, "uploadThroughput": 5 * 1024 * 1024},
+            "none": {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1}
+        }
+        prof_key = profile.lower()
+        cfg = profiles.get(prof_key, profiles["none"]).copy()
+        if offline is not None:
+            cfg["offline"] = offline
+        if latency is not None:
+            cfg["latency"] = latency
+        if download_throughput is not None:
+            cfg["downloadThroughput"] = download_throughput
+        if upload_throughput is not None:
+            cfg["uploadThroughput"] = upload_throughput
+
+        await self.send("Network.emulateNetworkConditions", cfg)
+        return {"status": "ok", "profile": prof_key, "conditions": cfg}
+
+    async def set_ignore_certificate_errors(self, ignore: bool = True) -> Dict[str, Any]:
+        """Bypass or enforce SSL/TLS certificate warnings on HTTPS websites."""
+        await self.send("Security.setIgnoreCertificateErrors", {"ignore": ignore})
+        return {"status": "ok", "ignore_certificate_errors": ignore}
+
+    # Media Theme, Zoom & Audio
+    async def set_media_theme(self, theme: str = "dark") -> Dict[str, Any]:
+        """Emulate color scheme: 'dark', 'light', or 'no-preference'."""
+        val = theme.lower()
+        await self.send("Emulation.setEmulatedMedia", {
+            "features": [{"name": "prefers-color-scheme", "value": val}]
+        })
+        return {"status": "ok", "theme": val}
+
+    async def set_page_zoom(self, scale: float = 1.0) -> Dict[str, Any]:
+        """Set page zoom scale factor (e.g. 0.5, 0.75, 1.0, 1.25, 1.5)."""
+        await self.send("Emulation.setPageScaleFactor", {"pageScaleFactor": scale})
+        return {"status": "ok", "scale": scale}
+
+    async def set_audio_muted(self, muted: bool = True) -> Dict[str, Any]:
+        """Mute or unmute all media elements on the active page."""
+        js = f"""(() => {{
+            window.__fb_audio_muted = {json.dumps(muted)};
+            document.querySelectorAll('audio, video').forEach(el => {{ el.muted = {json.dumps(muted)}; }});
+            if (!window.__fb_audio_hooked) {{
+                window.__fb_audio_hooked = true;
+                const origPlay = HTMLMediaElement.prototype.play;
+                HTMLMediaElement.prototype.play = function() {{
+                    if (window.__fb_audio_muted) this.muted = true;
+                    return origPlay.apply(this, arguments);
+                }};
+            }}
+            return true;
+        }})()"""
+        await self.evaluate(js)
+        return {"status": "ok", "muted": muted}
+
+    # Clipboard
+    async def get_clipboard_text(self) -> str:
+        """Read text from clipboard with focus and timeout fallback."""
+        try:
+            await self.grant_permissions(["clipboardReadWrite"])
+        except Exception:
+            pass
+        js = """(() => {
+            return new Promise((resolve) => {
+                const timer = setTimeout(() => resolve(''), 800);
+                try { window.focus(); } catch(e) {}
+                if (!navigator.clipboard || !navigator.clipboard.readText) {
+                    clearTimeout(timer);
+                    return resolve('');
+                }
+                navigator.clipboard.readText().then(text => {
+                    clearTimeout(timer);
+                    resolve(text || '');
+                }).catch(() => {
+                    clearTimeout(timer);
+                    resolve('');
+                });
+            });
+        })()"""
+        try:
+            return await self.evaluate(js, timeout=2.0) or ""
+        except Exception:
+            return ""
+
+    async def set_clipboard_text(self, text: str) -> bool:
+        """Write text to clipboard with focus and execCommand fallback."""
+        try:
+            await self.grant_permissions(["clipboardReadWrite"])
+        except Exception:
+            pass
+        js = f"""(() => {{
+            return new Promise((resolve) => {{
+                const targetText = {json.dumps(text)};
+                const timer = setTimeout(() => {{
+                    try {{
+                        const ta = document.createElement('textarea');
+                        ta.value = targetText;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        const success = document.execCommand('copy');
+                        ta.remove();
+                        resolve(Boolean(success));
+                    }} catch(e) {{ resolve(false); }}
+                }}, 800);
+
+                try {{ window.focus(); }} catch(e) {{}}
+                if (navigator.clipboard && navigator.clipboard.writeText) {{
+                    navigator.clipboard.writeText(targetText).then(() => {{
+                        clearTimeout(timer);
+                        resolve(true);
+                    }}).catch(() => {{}});
+                }}
+            }});
+        }})()"""
+        try:
+            return bool(await self.evaluate(js, timeout=2.0))
+        except Exception:
+            return False
+
+    # Find in Page
+    async def find_in_page(self, query: str, scroll_to_first: bool = True) -> Dict[str, Any]:
+        """Search text in page, returning match count and excerpts, and scroll to first match."""
+        js = f"""(() => {{
+            const query = {json.dumps(query)};
+            if (!query) return {{found: false, count: 0, query: '', matches: []}};
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            const matches = [];
+            let node;
+            let index = 0;
+            const qLower = query.toLowerCase();
+            while (node = walker.nextNode()) {{
+                const text = node.textContent;
+                const tLower = text.toLowerCase();
+                let pos = tLower.indexOf(qLower);
+                while (pos !== -1) {{
+                    index++;
+                    const start = Math.max(0, pos - 40);
+                    const end = Math.min(text.length, pos + query.length + 40);
+                    const snippet = text.substring(start, end).replace(/\\s+/g, ' ').trim();
+                    const parent = node.parentElement;
+                    matches.push({{
+                        index: index,
+                        snippet: snippet,
+                        tag: parent ? parent.tagName.toLowerCase() : 'text'
+                    }});
+                    if (index === 1 && {json.dumps(scroll_to_first)} && parent) {{
+                        parent.scrollIntoView({{behavior: 'smooth', block: 'center', inline: 'center'}});
+                    }}
+                    pos = tLower.indexOf(qLower, pos + query.length);
+                }}
+            }}
+            return {{
+                found: matches.length > 0,
+                count: matches.length,
+                query: query,
+                matches: matches.slice(0, 30)
+            }};
+        }})()"""
+        return await self.evaluate(js)
+
+    # IndexedDB
+    async def get_indexeddb_data(self) -> Dict[str, Any]:
+        """Inspect all IndexedDB databases and object stores for current origin."""
+        js = """(async () => {
+            try {
+                if (!window.indexedDB || !window.indexedDB.databases) {
+                    return {supported: false, databases: []};
+                }
+                const dbs = await window.indexedDB.databases();
+                const results = [];
+                for (const dbInfo of dbs) {
+                    const entry = {name: dbInfo.name, version: dbInfo.version, stores: []};
+                    try {
+                        await new Promise((resolve) => {
+                            const req = window.indexedDB.open(dbInfo.name, dbInfo.version);
+                            req.onsuccess = () => {
+                                const db = req.result;
+                                entry.stores = Array.from(db.objectStoreNames);
+                                db.close();
+                                resolve();
+                            };
+                            req.onerror = () => resolve();
+                        });
+                    } catch(e) {}
+                    results.push(entry);
+                }
+                return {supported: true, databases: results};
+            } catch (err) {
+                return {supported: false, error: String(err), databases: []};
+            }
+        })()"""
+        return await self.evaluate(js)

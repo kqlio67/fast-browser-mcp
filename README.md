@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
 [![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
 Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 
@@ -169,7 +169,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 
 ---
 
-## 🛠️ Complete Tool Reference (30+ Tools)
+## 🛠️ Complete Tool Reference (40+ Tools)
 
 ### 📑 Tab & Navigation
 | Tool | Description |
@@ -180,6 +180,9 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_close_tab` | Close a tab by target ID (or close current tab) |
 | `browser_navigate` | Navigate active tab to a URL |
 | `browser_reload` | Reload the page (with optional `ignore_cache` option) |
+| `browser_back` | Navigate backward in browser history (back button) |
+| `browser_forward` | Navigate forward in browser history (forward button) |
+| `browser_history` | Retrieve full tab navigation history entries and current position |
 
 ### 🎯 Interaction & Actions
 | Tool | Description |
@@ -189,6 +192,8 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_press_key` | Dispatch keyboard key event (`Enter`, `Escape`, `Tab`, `ArrowDown`, etc.) |
 | `browser_scroll` | Scroll page by $(\Delta x, \Delta y)$ or scroll element into view |
 | `browser_mouse` | Advanced mouse operations: `double_click`, `right_click`, `move`, `drag_and_drop` |
+| `browser_find_in_page` | Find text on page (Ctrl+F): count matches, extract snippets, and auto-scroll |
+| `browser_clipboard` | Read or write to the system clipboard (`read`, `write`) |
 | `browser_upload_file` | Upload files natively into `<input type='file'>` elements via CDP |
 
 ### 👁️ Inspection & Snapshots
@@ -203,7 +208,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 ### ⚡ High-Speed Batch Runner
 | Tool | Description |
 |---|---|
-| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip |
+| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, etc. |
 
 ### 📡 Network, WebSockets & Storage
 | Tool | Description |
@@ -214,6 +219,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_get_cookies` | Retrieve all cookies and authentication tokens for current origin |
 | `browser_set_cookie` | Inject cookies into the browser context |
 | `browser_get_storage` | Inspect and dump `localStorage` and `sessionStorage` |
+| `browser_get_indexeddb` | Inspect all IndexedDB databases, version numbers, and object store names |
 | `browser_clear_storage` | Clear browser cache and/or cookies |
 | `browser_export_traffic` | Export captured HTTP & WebSocket traffic into a structured JSON file |
 
@@ -224,6 +230,14 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_open_system_page` | Open or switch to Chrome system pages (`settings`, `extensions`, `downloads`, `history`, `flags`, etc.) |
 | `browser_list_extensions` | Query all installed Chrome extensions (IDs, names, versions, enabled status) |
 | `browser_extension_action` | Manage extensions: `enable`, `disable`, `reload`, `options`, `popup` |
+| `browser_add_preload_script` | Inject custom JavaScript evaluating before page scripts load (hooks / Tampermonkey) |
+| `browser_remove_preload_script` | Remove a previously registered preload script by identifier |
+| `browser_stealth_mode` | Toggle anti-bot stealth overrides (`navigator.webdriver`, plugins, languages) |
+| `browser_network_throttling` | Emulate network profiles (`offline`, `slow3g`, `fast3g`, `4g`, `none`) or custom latency/bandwidth |
+| `browser_set_media_theme` | Emulate color scheme on page: `dark`, `light`, `no-preference` |
+| `browser_set_page_zoom` | Adjust page zoom scale (e.g. `0.75`, `1.0`, `1.25`, `1.5`) |
+| `browser_mute_tab` | Mute or unmute all audio/video media playback on the active tab |
+| `browser_set_ignore_certificate_errors` | Bypass or enforce SSL/TLS certificate warnings on HTTPS websites |
 | `browser_system_info` | Inspect Chrome version, V8 engine, User-Agent, and memory metrics |
 | `browser_set_download_path` | Set download folder and allow downloads without browser dialogs |
 | `browser_grant_permissions` | Grant or reset permissions (`clipboardReadWrite`, `notifications`, `geolocation`) |
@@ -247,23 +261,51 @@ python3 -m fast_browser.cli list-tabs
 # Take a snapshot of a tab
 python3 -m fast_browser.cli --tab mmobitva snapshot
 
+# Navigate history (Back & Forward)
+python3 -m fast_browser.cli back
+python3 -m fast_browser.cli forward
+python3 -m fast_browser.cli history
+
+# Activate stealth mode (hide automation markers)
+python3 -m fast_browser.cli stealth
+
+# Emulate network conditions (Slow 3G, Offline, or reset)
+python3 -m fast_browser.cli throttling slow3g
+python3 -m fast_browser.cli throttling none
+
+# Emulate dark mode theme
+python3 -m fast_browser.cli theme dark
+
+# Adjust page zoom level (125%)
+python3 -m fast_browser.cli zoom 1.25
+
+# Mute tab audio
+python3 -m fast_browser.cli mute
+
+# Search text on page (Ctrl+F)
+python3 -m fast_browser.cli find "SearchQuery"
+
+# Read/write clipboard
+python3 -m fast_browser.cli clipboard --write "Hello from Fast Browser"
+python3 -m fast_browser.cli clipboard
+
+# Inspect IndexedDB databases
+python3 -m fast_browser.cli indexeddb
+
 # Inspect browser window geometry
 python3 -m fast_browser.cli window
 
 # Maximize browser window
 python3 -m fast_browser.cli window --state maximized
 
-# Open Chrome Settings
+# Open Chrome Settings or Extensions
 python3 -m fast_browser.cli system-page settings
-
-# List installed extensions
 python3 -m fast_browser.cli extensions
-
-# Inspect browser & CDP protocol versions
-python3 -m fast_browser.cli system-info
 
 # Run high-speed batch actions
 python3 -m fast_browser.cli --tab mytab batch '[
+  {"action": "stealth", "enabled": True},
+  {"action": "theme", "theme": "dark"},
   {"action": "snapshot"},
   {"action": "click", "ref": "@2"},
   {"action": "wait", "ms": 200},
