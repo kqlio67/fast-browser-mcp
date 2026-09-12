@@ -65,6 +65,15 @@ class ConsoleMonitor:
         self.logs.clear()
 
 
+class InFlightTracker(dict):
+    """Tracks active requests with start timestamps while supporting set-like operations."""
+    def add(self, item: str):
+        self[item] = time.time()
+
+    def discard(self, item: str):
+        self.pop(item, None)
+
+
 class NetworkMonitor:
     def __init__(self, max_requests: int = 300, max_ws_frames: int = 500):
         self.max_requests = max_requests
@@ -73,27 +82,34 @@ class NetworkMonitor:
         self.ordered_requests: deque = deque(maxlen=max_requests)
         self.ws_frames: deque = deque(maxlen=max_ws_frames)
         self.ws_connections: Dict[str, str] = {}  # requestId -> url
-        self.in_flight_requests: set = set()
+        self.in_flight_requests = InFlightTracker()
         self.last_activity_time: float = time.time()
 
-    def is_network_idle(self, idle_time: float = 0.5) -> bool:
-        return len(self.in_flight_requests) == 0 and (time.time() - self.last_activity_time) >= idle_time
+    def is_network_idle(self, idle_time: float = 0.5, timeout_ttl: float = 20.0) -> bool:
+        now = time.time()
+        if self.in_flight_requests:
+            expired = [rid for rid, start_t in list(self.in_flight_requests.items()) if (now - start_t) > timeout_ttl]
+            for rid in expired:
+                self.in_flight_requests.discard(rid)
+        return len(self.in_flight_requests) == 0 and (now - self.last_activity_time) >= idle_time
 
     def handle_event(self, method: str, params: Dict[str, Any]):
         t = time.strftime("%H:%M:%S")
 
         if method == "Network.requestWillBeSent":
             req_id = params.get("requestId")
-            if req_id:
+            req = params.get("request", {})
+            req_type = params.get("type", "Other")
+            if req_id and req_type not in ("EventSource", "WebSocket", "Ping"):
                 self.in_flight_requests.add(req_id)
             self.last_activity_time = time.time()
-            req = params.get("request", {})
             post_data = req.get("postData")
             if post_data and len(post_data) > 10240:
                 post_data = post_data[:10240] + "... [truncated]"
 
-            # Ring buffer eviction: prune requests dict when deque limit is reached
-            if len(self.ordered_requests) >= self.max_requests:
+            is_new = req_id not in self.requests
+            # Ring buffer eviction: prune requests dict when deque limit is reached for new requests
+            if is_new and len(self.ordered_requests) >= self.max_requests:
                 oldest_id = self.ordered_requests[0]
                 self.requests.pop(oldest_id, None)
 
@@ -103,15 +119,18 @@ class NetworkMonitor:
                 "method": req.get("method"),
                 "headers": req.get("headers", {}),
                 "postData": post_data,
-                "type": params.get("type", "Other"),
+                "type": req_type,
                 "timestamp": t,
                 "status": None,
                 "statusText": None,
                 "responseHeaders": {},
                 "mimeType": None
             }
+            if "redirectResponse" in params:
+                entry["redirected_from"] = params["redirectResponse"].get("url")
             self.requests[req_id] = entry
-            self.ordered_requests.append(req_id)
+            if is_new:
+                self.ordered_requests.append(req_id)
 
         elif method == "Network.responseReceived":
             self.last_activity_time = time.time()

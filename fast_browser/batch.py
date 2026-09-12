@@ -79,8 +79,8 @@ class BatchRunner:
             return f"Step {idx + 1} ('cdp_send'): missing 'method'"
         if act == "css_styles" and not (step.get("ref") or step.get("selector")):
             return f"Step {idx + 1} ('css_styles'): requires 'ref' or 'selector'"
-        if act == "block_urls" and not step.get("patterns"):
-            return f"Step {idx + 1} ('block_urls'): missing 'patterns' list"
+        if act == "block_urls" and not (step.get("patterns") or step.get("urls")):
+            return f"Step {idx + 1} ('block_urls'): missing 'patterns' or 'urls' list"
         return None
 
     @classmethod
@@ -388,7 +388,7 @@ class BatchRunner:
                     step_res["detail"] = f"Injected {len(headers)} custom headers"
 
                 elif action == "block_urls":
-                    urls = step.get("urls", [])
+                    urls = step.get("patterns") or step.get("urls", [])
                     await self.cdp.block_urls(urls)
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Blocked {len(urls)} URL patterns"
@@ -600,7 +600,7 @@ class BatchRunner:
                     step_res["detail"] = f"Granted permissions: {perms}"
 
                 elif action == "system_info":
-                    ver = self.cdp.get_browser_version()
+                    ver = await self.cdp.get_browser_version_async()
                     step_res["status"] = "ok"
                     step_res["browser_version"] = ver
 

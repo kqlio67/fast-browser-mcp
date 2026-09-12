@@ -22,11 +22,27 @@ wheels/
 .pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/
+
+# Browser / MCP output artifacts
 screenshot*.png
 *.pdf
 traffic_dump*.json
 traffic_export*.json
 *.log
+result.json
+.output
+
+# Virtual Environments
 .venv/
 venv/
-.DS_Store
+ENV/
+env.bak/
+venv.bak/

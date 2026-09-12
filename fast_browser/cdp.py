@@ -35,6 +35,7 @@ class CDPClient:
         self._browser_req_id = 0
         self._pending_requests: Dict[int, asyncio.Future] = {}
         self._listen_task: Optional[asyncio.Task] = None
+        self._connect_lock: Optional[asyncio.Lock] = None
         self.auto_accept_dialogs = True
         self.dialog_action = "accept"
         self.dialog_prompt_text: Optional[str] = None
@@ -101,39 +102,55 @@ class CDPClient:
                 return t
         return None
 
+    @property
+    def connect_lock(self) -> asyncio.Lock:
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
+        return self._connect_lock
+
     async def connect(self, target_query: Optional[str] = None, target_id: Optional[str] = None):
-        if target_id:
-            target = await self.get_target_by_id_async(target_id)
-        else:
-            target = await self.find_target_async(target_query)
-        if not target:
-            raise RuntimeError(f"No matching browser page found (query={target_query!r}, target_id={target_id!r}) on {self.host}:{self.port}")
-        
-        self.target_id = target.get("id")
-        self.ws_url = target.get("webSocketDebuggerUrl")
-        if not self.ws_url:
-            raise RuntimeError(f"Target {self.target_id} has no webSocketDebuggerUrl")
+        async with self.connect_lock:
+            if target_id and self.target_id == target_id and self.is_connected:
+                return
+            if not target_id and not target_query and self.is_connected:
+                return
 
-        if self._ws and not self._ws.closed:
-            await self.close()
+            if target_id:
+                target = await self.get_target_by_id_async(target_id)
+            else:
+                target = await self.find_target_async(target_query)
+            if not target:
+                raise RuntimeError(f"No matching browser page found (query={target_query!r}, target_id={target_id!r}) on {self.host}:{self.port}")
 
-        self._ws = await websockets.connect(self.ws_url, max_size=50 * 1024 * 1024)
-        self._listen_task = asyncio.create_task(self._listen_loop())
+            self.target_id = target.get("id")
+            self.ws_url = target.get("webSocketDebuggerUrl")
+            if not self.ws_url:
+                raise RuntimeError(f"Target {self.target_id} has no webSocketDebuggerUrl")
 
-        # Enable core domains
-        await self.send("Page.enable")
-        await self.send("Runtime.enable")
-        await self.send("DOM.enable")
-        await self.send("Network.enable", {"maxPostDataSize": 65536})
+            if self._ws and not self._ws.closed:
+                await self.close()
+
+            self._ws = await websockets.connect(self.ws_url, max_size=50 * 1024 * 1024)
+            self._listen_task = asyncio.create_task(self._listen_loop())
+
+            # Enable core domains
+            await self.send("Page.enable")
+            await self.send("Runtime.enable")
+            await self.send("DOM.enable")
+            await self.send("Network.enable", {"maxPostDataSize": 65536})
 
     async def close(self):
         if self._listen_task:
             self._listen_task.cancel()
+            try:
+                await self._listen_task
+            except (asyncio.CancelledError, Exception):
+                pass
             self._listen_task = None
         if self._ws:
             await self._ws.close()
             self._ws = None
-        for fut in self._pending_requests.values():
+        for fut in list(self._pending_requests.values()):
             if not fut.done():
                 fut.cancel()
         self._pending_requests.clear()
@@ -143,7 +160,7 @@ class CDPClient:
             async for raw_msg in self._ws:
                 msg = json.loads(raw_msg)
                 msg_id = msg.get("id")
-                
+
                 # Check for responses to sent requests
                 if msg_id is not None and msg_id in self._pending_requests:
                     fut = self._pending_requests.pop(msg_id)
@@ -180,6 +197,11 @@ class CDPClient:
             pass
         except Exception as e:
             logger.debug(f"CDP listen loop terminated: {e}")
+        finally:
+            for fut in list(self._pending_requests.values()):
+                if not fut.done():
+                    fut.set_exception(ConnectionResetError("CDP WebSocket connection was closed"))
+            self._pending_requests.clear()
 
     async def send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
         if not self.is_connected:
@@ -191,20 +213,23 @@ class CDPClient:
                     raise RuntimeError(f"CDP WebSocket disconnected and auto-reconnect failed: {e}")
             else:
                 raise RuntimeError("CDP WebSocket is not connected.")
-        
+
         self._req_id += 1
         req_id = self._req_id
         payload = {"id": req_id, "method": method, "params": params or {}}
-        
+
         fut = asyncio.get_running_loop().create_future()
         self._pending_requests[req_id] = fut
-        
+
         try:
             await self._ws.send(json.dumps(payload))
         except (websockets.ConnectionClosed, websockets.ConnectionClosedError):
             if self.target_id:
                 logger.info("WebSocket connection dropped during send. Reconnecting...")
                 await self.connect(target_id=self.target_id)
+                if fut.done() or fut.cancelled():
+                    fut = asyncio.get_running_loop().create_future()
+                self._pending_requests[req_id] = fut
                 await self._ws.send(json.dumps(payload))
             else:
                 raise
@@ -235,14 +260,20 @@ class CDPClient:
         return result_obj.get("value")
 
     async def navigate(self, url: str, wait_until_loaded: bool = True, timeout: float = 15.0) -> Dict[str, Any]:
+        t0 = asyncio.get_running_loop().time()
         res = await self.send("Page.navigate", {"url": url}, timeout=timeout)
         if wait_until_loaded:
-            await self.wait_for_dom_ready(timeout=timeout)
+            elapsed = asyncio.get_running_loop().time() - t0
+            rem_timeout = max(0.5, timeout - elapsed)
+            await self.wait_for_dom_ready(timeout=rem_timeout)
         return res
 
     async def reload(self, ignore_cache: bool = False, timeout: float = 15.0) -> Dict[str, Any]:
+        t0 = asyncio.get_running_loop().time()
         res = await self.send("Page.reload", {"ignoreCache": ignore_cache}, timeout=timeout)
-        await self.wait_for_dom_ready(timeout=timeout)
+        elapsed = asyncio.get_running_loop().time() - t0
+        rem_timeout = max(0.5, timeout - elapsed)
+        await self.wait_for_dom_ready(timeout=rem_timeout)
         return res
 
     def new_tab_sync(self, url: str = "about:blank") -> Dict[str, Any]:
@@ -268,9 +299,13 @@ class CDPClient:
     async def wait_for_dom_ready(self, timeout: float = 10.0):
         t0 = asyncio.get_running_loop().time()
         while asyncio.get_running_loop().time() - t0 < timeout:
-            ready_state = await self.evaluate("document.readyState")
-            if ready_state in ("interactive", "complete"):
-                return True
+            try:
+                rem = max(0.2, timeout - (asyncio.get_running_loop().time() - t0))
+                ready_state = await self.evaluate("document.readyState", timeout=rem)
+                if ready_state in ("interactive", "complete"):
+                    return True
+            except Exception:
+                pass
             await asyncio.sleep(0.05)
         return False
 
