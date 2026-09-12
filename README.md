@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
 [![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
 Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 
@@ -205,10 +205,19 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_print_to_pdf` | Print page to PDF file with landscape/background options |
 | `browser_eval` | Evaluate arbitrary JavaScript expressions in the page context |
 
+### 🛠️ DevTools Superpowers & Deep Inspection (v0.8.0)
+| Tool | Description |
+|---|---|
+| `browser_cdp_send` | **Universal CDP Raw Dispatcher**: Execute any of the 1,000+ Chrome DevTools Protocol commands directly (e.g. `DOM.enable`, `Storage.getCookies`, `Emulation.setDeviceMetricsOverride`, `Security.enable`, etc.) |
+| `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, box model, and fonts for any element by `@ref` or CSS selector |
+| `browser_new_isolated_tab` | Spawn a tab in a completely isolated incognito browser context (`Target.createBrowserContext`) with clean session, cookies, and cache |
+| `browser_set_cpu_throttling` | Emulate CPU slowdown factors (`1.0` = normal, `2.0` = 2x slowdown, `4.0` = 4x slowdown) for low-end device testing |
+| `browser_handle_dialog` | Automate JavaScript dialogs (`alert`, `confirm`, `prompt`) by accepting, dismissing, or providing prompt responses without blocking execution |
+
 ### ⚡ High-Speed Batch Runner & Resilience
 | Tool | Description |
 |---|---|
-| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `wait_idle`, `block_resources`, `metrics`, `geolocation`, `timezone`, `permissions`, `cleanup_tabs`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, etc. |
+| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `wait_idle`, `block_resources`, `metrics`, `geolocation`, `timezone`, `permissions`, `cleanup_tabs`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, `cdp_send`, `css_styles`, `isolated_tab`, `cpu_throttling`, `handle_dialog`, etc. |
 | `browser_wait_for_network_idle` | Wait until all in-flight network requests cease for a stable duration |
 | `browser_block_resources` | Block images, video/audio media, web fonts, or tracking scripts/ads for up to 10x page load speedup |
 | `browser_cleanup_tabs` | Automatically close blank (`about:blank`), stale, or pattern-matching tabs to free RAM |
@@ -305,6 +314,22 @@ python3 -m fast_browser.cli window --state maximized
 # Open Chrome Settings or Extensions
 python3 -m fast_browser.cli system-page settings
 python3 -m fast_browser.cli extensions
+
+# Send raw Chrome DevTools Protocol command ("God Mode")
+python3 -m fast_browser.cli cdp-send Page.getNavigationHistory
+
+# Inspect computed CSS styles of an element
+python3 -m fast_browser.cli css-styles --ref @1
+python3 -m fast_browser.cli css-styles --selector "button.primary"
+
+# Create a tab in an isolated incognito browser context
+python3 -m fast_browser.cli isolated-tab https://example.com
+
+# Emulate 4x CPU slowdown
+python3 -m fast_browser.cli cpu-throttling 4.0
+
+# Configure JavaScript dialog handling
+python3 -m fast_browser.cli dialog --action accept
 
 # Run high-speed batch actions
 python3 -m fast_browser.cli --tab mytab batch '[

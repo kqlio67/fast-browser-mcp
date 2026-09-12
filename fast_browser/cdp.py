@@ -34,6 +34,8 @@ class CDPClient:
         self._pending_requests: Dict[int, asyncio.Future] = {}
         self._listen_task: Optional[asyncio.Task] = None
         self.auto_accept_dialogs = True
+        self.dialog_action = "accept"
+        self.dialog_prompt_text: Optional[str] = None
         self.last_dialog_message: Optional[str] = None
         self.network = NetworkMonitor()
         self.console = ConsoleMonitor()
@@ -141,7 +143,10 @@ class CDPClient:
                     self.last_dialog_message = params.get("message")
                     logger.warning(f"JavaScript dialog opened: {self.last_dialog_message!r} (type={params.get('type')})")
                     if self.auto_accept_dialogs:
-                        asyncio.create_task(self.send("Page.handleJavaScriptDialog", {"accept": True}))
+                        d_params = {"accept": self.dialog_action == "accept"}
+                        if self.dialog_prompt_text is not None:
+                            d_params["promptText"] = self.dialog_prompt_text
+                        asyncio.create_task(self.send("Page.handleJavaScriptDialog", d_params))
 
         except asyncio.CancelledError:
             pass
@@ -1176,3 +1181,101 @@ class CDPClient:
             params["origin"] = origin
         await self.send("Browser.grantPermissions", params)
         return {"success": True, "permissions": permissions, "origin": origin}
+
+    # Universal Raw CDP Method (God Mode)
+    async def send_cdp(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+        """Send any raw Chrome DevTools Protocol command directly."""
+        return await self.send(method, params or {}, timeout=timeout)
+
+    # CSS Styles Inspection
+    async def get_css_styles(self, selector: Optional[str] = None, ref: Optional[str] = None) -> Dict[str, Any]:
+        """Inspect computed CSS styles and matched rules for an element."""
+        if ref:
+            id_num = int(str(ref).replace("@", ""))
+            target_el = f"window.__fb_refs && window.__fb_refs[{id_num}]"
+        elif selector:
+            target_el = f"document.querySelector({json.dumps(selector)})"
+        else:
+            raise ValueError("Must provide either 'selector' or 'ref'")
+
+        js = f"""(() => {{
+            const el = {target_el};
+            if (!el) return null;
+            const computed = window.getComputedStyle(el);
+            const keyProps = [
+                'display', 'visibility', 'opacity', 'position', 'top', 'right', 'bottom', 'left',
+                'width', 'height', 'box-sizing', 'margin', 'padding', 'border',
+                'color', 'background-color', 'background-image',
+                'font-family', 'font-size', 'font-weight', 'line-height',
+                'flex-direction', 'justify-content', 'align-items',
+                'z-index', 'overflow', 'cursor', 'pointer-events', 'transform'
+            ];
+            const compObj = {{}};
+            for (const p of keyProps) {{
+                const val = computed.getPropertyValue(p);
+                if (val) compObj[p] = val;
+            }}
+            const matchedRules = [];
+            for (const sheet of Array.from(document.styleSheets)) {{
+                try {{
+                    const rules = sheet.cssRules || sheet.rules;
+                    for (const rule of Array.from(rules)) {{
+                        if (rule.selectorText && el.matches(rule.selectorText)) {{
+                            matchedRules.push({{
+                                selector: rule.selectorText,
+                                cssText: rule.style.cssText,
+                                href: sheet.href || 'inline'
+                            }});
+                        }}
+                    }}
+                }} catch(e) {{}}
+            }}
+            return {{
+                tag: el.tagName.toLowerCase(),
+                id: el.id,
+                className: el.className,
+                inlineStyle: el.style.cssText,
+                computed: compObj,
+                matchedRules: matchedRules.slice(0, 20)
+            }};
+        }})()"""
+        res = await self.evaluate(js)
+        if not res:
+            raise RuntimeError(f"Element not found for CSS style inspection (selector={selector}, ref={ref})")
+        return res
+
+    # Isolated Browser Context (Incognito)
+    async def new_isolated_tab(self, url: str = "about:blank") -> Dict[str, Any]:
+        """Create a new tab in a fresh, fully isolated browser context (incognito)."""
+        ctx = await self.send_browser_cmd("Target.createBrowserContext")
+        browser_context_id = ctx.get("browserContextId")
+        target = await self.send_browser_cmd("Target.createTarget", {
+            "url": url,
+            "browserContextId": browser_context_id
+        })
+        return {
+            "target_id": target.get("targetId"),
+            "browser_context_id": browser_context_id,
+            "url": url,
+            "isolated": True
+        }
+
+    # CPU Throttling
+    async def set_cpu_throttling(self, rate: float = 1.0) -> Dict[str, Any]:
+        """Emulate CPU throttling (e.g. 1.0 = normal, 2.0 = 2x slowdown, 4.0 = 4x slowdown)."""
+        await self.send("Emulation.setCPUThrottlingRate", {"rate": float(rate)})
+        return {"rate": rate, "throttled": rate > 1.0}
+
+    # Dialog Management
+    def set_dialog_behavior(self, action: str = "accept", prompt_text: Optional[str] = None):
+        """Configure auto-response behavior for future JavaScript dialogs."""
+        self.dialog_action = action
+        self.dialog_prompt_text = prompt_text
+
+    async def handle_dialog(self, action: str = "accept", prompt_text: Optional[str] = None) -> Dict[str, Any]:
+        """Handle active JavaScript dialog with custom action and prompt text."""
+        d_params = {"accept": action.lower() == "accept"}
+        if prompt_text is not None:
+            d_params["promptText"] = prompt_text
+        await self.send("Page.handleJavaScriptDialog", d_params)
+        return {"action": action, "prompt_text": prompt_text, "handled": True}

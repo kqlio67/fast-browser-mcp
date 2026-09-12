@@ -262,6 +262,30 @@ async def run_cli():
     perm_p.add_argument("permissions", nargs="+", help="Permissions to grant (e.g. geolocation notifications)")
     perm_p.add_argument("--origin", help="Target origin")
 
+    # cdp-send
+    cdp_p = subparsers.add_parser("cdp-send", help="Universal raw CDP command invoker (God Mode)")
+    cdp_p.add_argument("method", help="CDP method name (e.g. DOM.getBoxModel, Memory.getDOMCounters)")
+    cdp_p.add_argument("--params", help="JSON string with method parameters")
+    cdp_p.add_argument("--timeout", type=float, default=10.0, help="Timeout in seconds")
+
+    # css-styles
+    css_p = subparsers.add_parser("css-styles", help="Inspect element CSS computed styles and matched rules")
+    css_p.add_argument("--selector", help="Element CSS selector")
+    css_p.add_argument("--ref", help="Element snapshot reference (e.g. @1)")
+
+    # isolated-tab
+    iso_p = subparsers.add_parser("isolated-tab", help="Open new tab in isolated incognito context")
+    iso_p.add_argument("--url", default="about:blank", help="URL to open")
+
+    # cpu-throttling
+    cpu_p = subparsers.add_parser("cpu-throttling", help="Emulate CPU throttling rate")
+    cpu_p.add_argument("rate", type=float, help="Slowdown rate (1.0 = normal, 2.0 = 2x, 4.0 = 4x)")
+
+    # dialog
+    dlg_p = subparsers.add_parser("dialog", help="Handle JavaScript alert/confirm/prompt dialog")
+    dlg_p.add_argument("--action", choices=["accept", "dismiss"], default="accept", help="Dialog action")
+    dlg_p.add_argument("--prompt-text", help="Text to fill in window.prompt")
+
     args = parser.parse_args()
 
     cdp = CDPClient(host=args.host, port=args.port)
@@ -553,6 +577,27 @@ async def run_cli():
 
     elif args.command == "permissions":
         res = await cdp.grant_permissions(permissions=args.permissions, origin=args.origin)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "cdp-send":
+        params = json.loads(args.params) if args.params else None
+        res = await cdp.send_cdp(method=args.method, params=params, timeout=args.timeout)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "css-styles":
+        res = await cdp.get_css_styles(selector=args.selector, ref=args.ref)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "isolated-tab":
+        res = await cdp.new_isolated_tab(url=args.url)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "cpu-throttling":
+        res = await cdp.set_cpu_throttling(rate=args.rate)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "dialog":
+        res = await cdp.handle_dialog(action=args.action, prompt_text=args.prompt_text)
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     await cdp.close()

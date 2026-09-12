@@ -649,6 +649,41 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["permissions"] = res
 
+                elif action == "cdp_send":
+                    method = step.get("method")
+                    if not method:
+                        raise ValueError("Missing 'method' for cdp_send action")
+                    params = step.get("params")
+                    res = await self.cdp.send_cdp(method=method, params=params, timeout=step.get("timeout", 10.0))
+                    step_res["status"] = "ok"
+                    step_res["cdp_result"] = res
+
+                elif action == "css_styles":
+                    selector = step.get("selector")
+                    ref = step.get("ref")
+                    res = await self.cdp.get_css_styles(selector=selector, ref=ref)
+                    step_res["status"] = "ok"
+                    step_res["css_styles"] = res
+
+                elif action == "isolated_tab":
+                    url = step.get("url", "about:blank")
+                    res = await self.cdp.new_isolated_tab(url=url)
+                    step_res["status"] = "ok"
+                    step_res["isolated_tab"] = res
+
+                elif action == "cpu_throttling":
+                    rate = step.get("rate", 1.0)
+                    res = await self.cdp.set_cpu_throttling(rate=rate)
+                    step_res["status"] = "ok"
+                    step_res["cpu_throttling"] = res
+
+                elif action == "handle_dialog":
+                    act = step.get("dialog_action", "accept")
+                    prompt = step.get("prompt_text")
+                    res = await self.cdp.handle_dialog(action=act, prompt_text=prompt)
+                    step_res["status"] = "ok"
+                    step_res["dialog"] = res
+
                 else:
                     raise ValueError(f"Unknown action: {action!r}")
 

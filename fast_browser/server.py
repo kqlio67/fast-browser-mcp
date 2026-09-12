@@ -810,6 +810,65 @@ TOOLS = [
             },
             "required": ["permissions"]
         }
+    },
+    {
+        "name": "browser_cdp_send",
+        "description": "UNIVERSAL RAW CDP (GOD MODE): Send any raw Chrome DevTools Protocol command directly with custom parameters (e.g. 'DOM.getBoxModel', 'CSS.enable', 'Memory.getDOMCounters', 'Tracing.start', 'Fetch.enable').",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "method": {"type": "string", "description": "CDP method name (e.g. 'DOM.getBoxModel', 'Page.printToPDF')"},
+                "params": {"type": "object", "description": "Optional parameters dictionary for the CDP command"},
+                "timeout": {"type": "number", "default": 10.0, "description": "Command timeout in seconds"}
+            },
+            "required": ["method"]
+        }
+    },
+    {
+        "name": "browser_get_css_styles",
+        "description": "Inspect element computed CSS styles and matched stylesheet rules by selector or @ref.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector of element"},
+                "ref": {"type": "string", "description": "Element reference from snapshot (e.g. '@1')"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_new_isolated_tab",
+        "description": "Open a new tab in a fresh, completely isolated browser context (incognito mode: zero shared cookies, clean session storage).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "default": "about:blank", "description": "URL to open"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_set_cpu_throttling",
+        "description": "Emulate slower CPU speeds (1.0 = normal, 2.0 = 2x slowdown, 4.0 = 4x slowdown).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "rate": {"type": "number", "default": 1.0, "description": "CPU slowdown multiplier"}
+            },
+            "required": ["rate"]
+        }
+    },
+    {
+        "name": "browser_handle_dialog",
+        "description": "Handle or configure behavior for JavaScript dialogs (alert, confirm, prompt) with custom action and prompt text.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["accept", "dismiss"], "default": "accept", "description": "Whether to accept or dismiss dialog"},
+                "prompt_text": {"type": "string", "description": "Optional text to enter for window.prompt"}
+            },
+            "required": []
+        }
     }
 ]
 
@@ -1218,6 +1277,36 @@ class MCPServer:
             )
             return json.dumps(res, indent=2)
 
+        elif name == "browser_cdp_send":
+            res = await self.cdp.send_cdp(
+                method=args["method"],
+                params=args.get("params"),
+                timeout=args.get("timeout", 10.0)
+            )
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_get_css_styles":
+            res = await self.cdp.get_css_styles(
+                selector=args.get("selector"),
+                ref=args.get("ref")
+            )
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_new_isolated_tab":
+            res = await self.cdp.new_isolated_tab(url=args.get("url", "about:blank"))
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_set_cpu_throttling":
+            res = await self.cdp.set_cpu_throttling(rate=args.get("rate", 1.0))
+            return json.dumps(res, indent=2)
+
+        elif name == "browser_handle_dialog":
+            res = await self.cdp.handle_dialog(
+                action=args.get("action", "accept"),
+                prompt_text=args.get("prompt_text")
+            )
+            return json.dumps(res, indent=2)
+
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -1260,7 +1349,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.7.0"
+                                "version": "0.8.0"
                             }
                         }
                     }
