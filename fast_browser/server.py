@@ -95,7 +95,7 @@ TOOLS = [
     },
     {
         "name": "browser_batch",
-        "description": "ULTRA-FAST MULTI-ACTION BATCH EXECUTION: Execute a sequence of browser actions in a single round-trip without model latency. Supports: 'navigate', 'click', 'double_click', 'right_click', 'drag_and_drop', 'mouse_move', 'fill', 'press_key', 'scroll', 'select_option', 'hover', 'wait', 'eval', 'extract', 'snapshot', 'screenshot' (with full_page and clip selector support), 'pdf', 'get_html', 'set_viewport', 'set_user_agent', 'set_headers', 'block_urls', 'set_geolocation', 'set_timezone', 'get_storage', 'clear_cache', 'clear_cookies', 'set_cookie', 'export_traffic', 'console_logs', 'upload_file'.",
+        "description": "ULTRA-FAST MULTI-ACTION BATCH EXECUTION: Execute a sequence of browser actions in a single round-trip without model latency. Supports: 'navigate', 'click', 'double_click', 'right_click', 'drag_and_drop', 'mouse_move', 'fill', 'press_key', 'scroll', 'select_option', 'hover', 'wait', 'eval', 'extract', 'snapshot', 'screenshot' (with full_page and clip selector support), 'pdf', 'get_html', 'set_viewport', 'set_user_agent', 'set_headers', 'block_urls', 'set_geolocation', 'set_timezone', 'get_storage', 'clear_cache', 'clear_cookies', 'set_cookie', 'export_traffic', 'console_logs', 'upload_file', 'window', 'system_page', 'extensions', 'extension_action', 'set_download_path', 'grant_permissions', 'system_info'.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -470,6 +470,91 @@ TOOLS = [
             },
             "required": []
         }
+    },
+    {
+        "name": "browser_window",
+        "description": "Manage browser window: inspect bounds or set state ('normal', 'minimized', 'maximized', 'fullscreen') and dimensions/position.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["get", "set"], "default": "get", "description": "Action: 'get' or 'set'"},
+                "state": {"type": "string", "enum": ["normal", "minimized", "maximized", "fullscreen"], "description": "Window state"},
+                "width": {"type": "integer", "description": "Window width in pixels"},
+                "height": {"type": "integer", "description": "Window height in pixels"},
+                "left": {"type": "integer", "description": "Window left coordinate"},
+                "top": {"type": "integer", "description": "Window top coordinate"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "browser_open_system_page",
+        "description": "Open or switch to a Chrome system page: 'settings', 'extensions', 'downloads', 'history', 'bookmarks', 'flags', 'version', 'gpu', 'net-internals'.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "string",
+                    "description": "System page name (e.g. 'settings', 'extensions', 'downloads', 'history', 'flags') or custom chrome:// URL"
+                }
+            },
+            "required": ["page"]
+        }
+    },
+    {
+        "name": "browser_list_extensions",
+        "description": "List all installed Chrome extensions with their IDs, names, versions, enabled status, and options URLs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_extension_action",
+        "description": "Perform management action on a Chrome extension: enable, disable, reload, open options, or open popup.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "extension_id": {"type": "string", "description": "The extension ID (from browser_list_extensions)"},
+                "action": {"type": "string", "enum": ["enable", "disable", "reload", "options", "popup"], "description": "Action to perform"}
+            },
+            "required": ["extension_id", "action"]
+        }
+    },
+    {
+        "name": "browser_system_info",
+        "description": "Get comprehensive browser information: Chrome version, V8 version, User-Agent, protocol version, and memory performance metrics.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_set_download_path",
+        "description": "Set browser download directory and behavior (automatically allow downloads without popup prompt).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "download_path": {"type": "string", "description": "Absolute filesystem directory for downloads"},
+                "behavior": {"type": "string", "enum": ["allow", "deny", "default"], "default": "allow"}
+            },
+            "required": ["download_path"]
+        }
+    },
+    {
+        "name": "browser_grant_permissions",
+        "description": "Grant or reset browser permissions (e.g. notifications, clipboardReadWrite, geolocation) for an origin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "permissions": {"type": "array", "items": {"type": "string"}, "description": "List of permissions to grant (e.g. ['clipboardReadWrite', 'notifications'])"},
+                "origin": {"type": "string", "description": "Target origin (optional)"},
+                "reset": {"type": "boolean", "default": False, "description": "Reset all granted permissions"}
+            },
+            "required": []
+        }
     }
 ]
 
@@ -689,6 +774,65 @@ class MCPServer:
             res = await self.batch.execute(steps)
             return json.dumps(res, ensure_ascii=False)
 
+        elif name == "browser_window":
+            action = args.get("action", "get")
+            state = args.get("state")
+            width = args.get("width")
+            height = args.get("height")
+            left = args.get("left")
+            top = args.get("top")
+            if action == "set" or any(v is not None for v in [state, width, height, left, top]):
+                await self.cdp.set_window_bounds(state=state, width=width, height=height, left=left, top=top)
+                bounds = await self.cdp.get_window_bounds()
+                return f"Window bounds updated: {json.dumps(bounds.get('bounds'), ensure_ascii=False)}"
+            else:
+                bounds = await self.cdp.get_window_bounds()
+                return json.dumps(bounds, ensure_ascii=False, indent=2)
+
+        elif name == "browser_open_system_page":
+            page = args.get("page", "settings")
+            res = await self.cdp.open_system_page(page)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_list_extensions":
+            exts = await self.cdp.list_extensions()
+            return json.dumps(exts, ensure_ascii=False, indent=2)
+
+        elif name == "browser_extension_action":
+            ext_id = args.get("extension_id")
+            act = args.get("action")
+            res = await self.cdp.extension_action(ext_id, act)
+            return json.dumps(res, ensure_ascii=False, indent=2)
+
+        elif name == "browser_system_info":
+            ver = self.cdp.get_browser_version()
+            metrics = {}
+            try:
+                metrics = await self.cdp.get_performance_metrics()
+            except Exception:
+                pass
+            info = {
+                "browser_version": ver,
+                "metrics": metrics,
+                "targets_count": len(self.cdp.list_targets())
+            }
+            return json.dumps(info, ensure_ascii=False, indent=2)
+
+        elif name == "browser_set_download_path":
+            dl_path = args.get("download_path")
+            behavior = args.get("behavior", "allow")
+            await self.cdp.set_download_path(dl_path, behavior=behavior)
+            return f"Download path configured: {dl_path} (behavior={behavior})"
+
+        elif name == "browser_grant_permissions":
+            if args.get("reset"):
+                await self.cdp.reset_permissions()
+                return "All browser permissions reset"
+            perms = args.get("permissions", [])
+            origin = args.get("origin")
+            await self.cdp.grant_permissions(perms, origin=origin)
+            return f"Granted permissions: {perms}"
+
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -731,7 +875,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.4.0"
+                                "version": "0.5.0"
                             }
                         }
                     }

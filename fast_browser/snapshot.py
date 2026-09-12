@@ -10,10 +10,14 @@ SNAPSHOT_JS = """(() => {
 
     function isVisible(el) {
         if (!el) return false;
-        const style = window.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-        const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
+        try {
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        } catch(e) {
+            return false;
+        }
     }
 
     function isInViewport(rect) {
@@ -92,9 +96,12 @@ SNAPSHOT_JS = """(() => {
             const name = el.name ? ` name="${el.name}"` : '';
             const chk = el.checked ? ' checked' : '';
             extra = ` [type=${type}${name}${ph}${val}${chk}]`;
-        } else if (tag === 'button' || role === 'button') {
+        } else if (tag === 'cr-toggle' || tag === 'cr-checkbox') {
+            const chk = el.checked ? ' checked' : ' unchecked';
+            extra = ` [${chk}]`;
+        } else if (tag === 'button' || role === 'button' || tag === 'cr-button' || tag === 'cr-icon-button') {
             extra = text ? ` "${text}"` : '';
-        } else if (tag === 'a') {
+        } else if (tag === 'a' || role === 'link' || role === 'menuitem') {
             const href = el.getAttribute('href');
             const hrefStr = (href && href !== '#' && !href.startsWith('javascript:')) ? ` -> ${href}` : '';
             extra = text ? ` "${text}"${hrefStr}` : hrefStr;
@@ -117,28 +124,65 @@ SNAPSHOT_JS = """(() => {
         };
     }
 
-    const interactiveSelectors = [
-        'button', 'a[href]', 'a[onclick]', 'input', 'select', 'textarea',
-        '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="tab"]',
-        '[role="menuitem"]', '[onclick]', '[tabindex]:not([tabindex="-1"])'
+    const interactiveTags = [
+        'button', 'a', 'input', 'select', 'textarea',
+        'cr-button', 'cr-toggle', 'cr-checkbox', 'cr-icon-button', 'cr-link-row',
+        'paper-toggle-button', 'paper-checkbox', 'paper-button'
     ];
 
-    function collectFromDoc(doc, framePrefix = '') {
-        const raw = Array.from(doc.querySelectorAll(interactiveSelectors.join(',')))
-            .filter(isVisible);
+    function isInteractiveElement(el) {
+        if (!isVisible(el)) return false;
+        const tag = el.tagName.toLowerCase();
 
-        const filtered = [];
-        for (let i = 0; i < raw.length; i++) {
-            const curr = raw[i];
-            const hasChild = raw.some(other => other !== curr && curr.contains(other) && ['button', 'a', 'input', 'select'].includes(other.tagName.toLowerCase()));
-            if (!hasChild || ['button', 'a', 'input', 'select'].includes(curr.tagName.toLowerCase())) {
-                filtered.push(curr);
+        // Skip decorative inner elements of interactive containers
+        const parentInteractive = el.parentElement ? el.parentElement.closest('button, a, cr-button, cr-icon-button, cr-toggle, cr-checkbox, [role="button"], [role="menuitem"], [role="tab"]') : null;
+        if (parentInteractive) {
+            if (['svg', 'path', 'cr-icon', 'cr-ripple', 'span', 'div', 'i'].includes(tag)) {
+                return false;
             }
         }
-        return filtered.map(el => getElementDescriptor(el, framePrefix));
+
+        if (interactiveTags.includes(tag)) return true;
+        if (el.getAttribute('href')) return true;
+        if (el.getAttribute('onclick')) return true;
+        const role = el.getAttribute('role');
+        if (['button', 'link', 'checkbox', 'tab', 'menuitem', 'switch', 'radio'].includes(role)) return true;
+        const tabIndex = el.getAttribute('tabindex');
+        if (tabIndex && tabIndex !== '-1') return true;
+        
+        try {
+            const style = window.getComputedStyle(el);
+            if (style.cursor === 'pointer' && el.children.length === 0) return true;
+        } catch(e) {}
+
+        return false;
     }
 
-    let allDescriptors = collectFromDoc(document);
+    function collectFromRoot(root, framePrefix = '') {
+        const found = [];
+        function walk(node) {
+            if (!node) return;
+            const children = node.children || [];
+            for (let i = 0; i < children.length; i++) {
+                const el = children[i];
+                if (isInteractiveElement(el)) {
+                    found.push(getElementDescriptor(el, framePrefix));
+                }
+                // Traverse Shadow DOM
+                if (el.shadowRoot) {
+                    walk(el.shadowRoot);
+                }
+                // Traverse child elements
+                if (el.children && el.children.length > 0) {
+                    walk(el);
+                }
+            }
+        }
+        walk(root);
+        return found;
+    }
+
+    let allDescriptors = collectFromRoot(document);
 
     // Recursively collect from accessible iframes
     const iframes = Array.from(document.querySelectorAll('iframe'));
@@ -147,7 +191,7 @@ SNAPSHOT_JS = """(() => {
             const iDoc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
             if (iDoc) {
                 const name = iframe.name || iframe.id || `frame_${idx+1}`;
-                const iframeDescriptors = collectFromDoc(iDoc, `(iframe:${name}) `);
+                const iframeDescriptors = collectFromRoot(iDoc, `(iframe:${name}) `);
                 allDescriptors = allDescriptors.concat(iframeDescriptors);
             }
         } catch(e) {}
@@ -171,6 +215,24 @@ class PageSnapshot:
         self.cdp = cdp
 
     async def capture(self) -> Dict[str, Any]:
+        url = await self.cdp.evaluate("window.location.href")
+        if url and ("chrome://settings" in url or "chrome://extensions" in url):
+            ready_js = """(async () => {
+                const uiTag = document.querySelector('settings-ui') ? 'settings-ui' : (document.querySelector('extensions-manager') ? 'extensions-manager' : null);
+                if (uiTag && window.customElements) {
+                    await customElements.whenDefined(uiTag);
+                    const el = document.querySelector(uiTag);
+                    for (let i = 0; i < 20; i++) {
+                        if (el && el.shadowRoot) break;
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                }
+                return true;
+            })()"""
+            try:
+                await self.cdp.evaluate(ready_js, timeout=3.0)
+            except Exception:
+                pass
         data = await self.cdp.evaluate(SNAPSHOT_JS)
         return data
 

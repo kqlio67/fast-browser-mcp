@@ -30,6 +30,7 @@ class CDPClient:
         self.target_id: Optional[str] = None
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._req_id = 0
+        self._browser_req_id = 0
         self._pending_requests: Dict[int, asyncio.Future] = {}
         self._listen_task: Optional[asyncio.Task] = None
         self.auto_accept_dialogs = True
@@ -475,3 +476,239 @@ class CDPClient:
 
         res = await self.send("Page.captureScreenshot", params)
         return res.get("data", "")
+
+    async def send_browser_cmd(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+        """Send a CDP command directly to the browser-level WebSocket endpoint."""
+        ver_url = f"http://{self.host}:{self.port}/json/version"
+        resp = requests.get(ver_url, timeout=3)
+        resp.raise_for_status()
+        browser_ws_url = resp.json().get("webSocketDebuggerUrl")
+        if not browser_ws_url:
+            raise RuntimeError("No webSocketDebuggerUrl returned by /json/version")
+        
+        self._browser_req_id += 1
+        req_id = self._browser_req_id
+        payload = {"id": req_id, "method": method, "params": params or {}}
+        
+        async with websockets.connect(browser_ws_url, max_size=10 * 1024 * 1024) as ws:
+            await ws.send(json.dumps(payload))
+            t0 = asyncio.get_running_loop().time()
+            while asyncio.get_running_loop().time() - t0 < timeout:
+                raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+                msg = json.loads(raw)
+                if msg.get("id") == req_id:
+                    if "error" in msg:
+                        raise RuntimeError(f"CDP Browser Error: {msg['error']}")
+                    return msg.get("result", {})
+            raise TimeoutError(f"Browser command {method} timed out")
+
+    def get_browser_version(self) -> Dict[str, Any]:
+        """Get browser and CDP protocol version info."""
+        url = f"http://{self.host}:{self.port}/json/version"
+        resp = requests.get(url, timeout=3)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_window_bounds(self, target_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get browser window bounds and state (normal, minimized, maximized, fullscreen)."""
+        tid = target_id or self.target_id
+        if not tid:
+            targets = self.list_targets()
+            pages = [t for t in targets if t.get("type") == "page"]
+            if pages:
+                tid = pages[0]["id"]
+            else:
+                raise RuntimeError("No target page available to get window bounds")
+        return await self.send_browser_cmd("Browser.getWindowForTarget", {"targetId": tid})
+
+    async def set_window_bounds(
+        self,
+        state: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        left: Optional[int] = None,
+        top: Optional[int] = None,
+        target_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Set browser window state (normal, minimized, maximized, fullscreen) or resize/position bounds."""
+        win_info = await self.get_window_bounds(target_id)
+        window_id = win_info.get("windowId")
+        bounds: Dict[str, Any] = {}
+        if state:
+            bounds["windowState"] = state.lower()
+        if width is not None:
+            bounds["width"] = width
+        if height is not None:
+            bounds["height"] = height
+        if left is not None:
+            bounds["left"] = left
+        if top is not None:
+            bounds["top"] = top
+        return await self.send_browser_cmd("Browser.setWindowBounds", {"windowId": window_id, "bounds": bounds})
+
+    async def set_download_path(self, download_path: str, behavior: str = "allow") -> Dict[str, Any]:
+        """Configure browser download behavior and directory."""
+        return await self.send_browser_cmd("Browser.setDownloadBehavior", {
+            "behavior": behavior,
+            "downloadPath": download_path,
+            "eventsEnabled": True
+        })
+
+    async def grant_permissions(self, permissions: List[str], origin: Optional[str] = None) -> Dict[str, Any]:
+        """Grant browser permissions (notifications, clipboardReadWrite, geolocation, etc.)."""
+        params: Dict[str, Any] = {"permissions": permissions}
+        if origin:
+            params["origin"] = origin
+        return await self.send_browser_cmd("Browser.grantPermissions", params)
+
+    async def reset_permissions(self) -> Dict[str, Any]:
+        """Reset all browser permissions."""
+        return await self.send_browser_cmd("Browser.resetPermissions")
+
+    async def open_system_page(self, name_or_url: str) -> Dict[str, Any]:
+        """Open or switch to a system page (settings, extensions, downloads, history, bookmarks, flags)."""
+        system_map = {
+            "settings": "chrome://settings",
+            "extensions": "chrome://extensions",
+            "downloads": "chrome://downloads",
+            "history": "chrome://history",
+            "bookmarks": "chrome://bookmarks",
+            "flags": "chrome://flags",
+            "version": "chrome://version",
+            "gpu": "chrome://gpu",
+            "net-internals": "chrome://net-internals",
+            "experiments": "chrome://flags"
+        }
+        page_key = name_or_url.strip().lower()
+        target_url = system_map.get(page_key, name_or_url)
+        if not target_url.startswith("chrome://") and not target_url.startswith("http"):
+            target_url = f"chrome://{target_url}"
+        
+        targets = self.list_targets()
+        for t in targets:
+            if t.get("type") == "page" and t.get("url", "").rstrip("/") == target_url.rstrip("/"):
+                await self.connect(t.get("id"))
+                return {"status": "switched", "target": t}
+        
+        new_tab = await self.new_tab(target_url)
+        await asyncio.sleep(0.5)
+        await self.connect(new_tab.get("id"))
+        return {"status": "opened", "target": new_tab}
+
+    async def list_extensions(self) -> List[Dict[str, Any]]:
+        """List all installed extensions with IDs, names, versions, enabled states, and options URLs."""
+        temp_tab_id = None
+        current_url = ""
+        if self.is_connected:
+            try:
+                current_url = await self.evaluate("window.location.href") or ""
+            except Exception:
+                current_url = ""
+
+        try:
+            if "chrome://extensions" not in current_url:
+                tab_res = await self.open_system_page("extensions")
+                if tab_res.get("status") == "opened":
+                    temp_tab_id = tab_res.get("target", {}).get("id")
+                await asyncio.sleep(0.6)
+
+            js = """(async () => {
+                if (window.chrome && chrome.developerPrivate && chrome.developerPrivate.getExtensionsInfo) {
+                    const list = await chrome.developerPrivate.getExtensionsInfo();
+                    return list.map(e => ({
+                        id: e.id,
+                        name: e.name,
+                        version: e.version,
+                        description: e.description || '',
+                        enabled: e.state === 'ENABLED',
+                        incognitoAccess: e.incognitoAccess,
+                        fileAccess: e.fileAccess,
+                        optionsUrl: (e.optionsPage && e.optionsPage.url) ? e.optionsPage.url : (e.optionsUrl || null),
+                        homepageUrl: e.homePageUrl || null
+                    }));
+                }
+                return null;
+            })()"""
+            exts = await self.evaluate(js)
+            if exts:
+                return exts
+        except Exception as e:
+            logger.warning(f"Failed to query chrome.developerPrivate: {e}")
+        finally:
+            if temp_tab_id:
+                try:
+                    await self.close_tab(temp_tab_id)
+                except Exception:
+                    pass
+
+        # Fallback to /json targets inspection
+        targets = self.list_targets()
+        ext_map = {}
+        for t in targets:
+            url = t.get("url", "")
+            if "chrome-extension://" in url:
+                parts = url.split("chrome-extension://")[-1].split("/")
+                ext_id = parts[0]
+                if ext_id not in ext_map:
+                    ext_map[ext_id] = {
+                        "id": ext_id,
+                        "name": t.get("title") or ext_id,
+                        "type": t.get("type"),
+                        "url": url,
+                        "enabled": True
+                    }
+        return list(ext_map.values())
+
+    async def extension_action(self, extension_id: str, action: str) -> Dict[str, Any]:
+        """Perform action on an extension: 'enable', 'disable', 'reload', 'options', 'popup'."""
+        act = action.lower()
+        if act in ("options", "popup"):
+            page_name = "options.html" if act == "options" else "popup.html"
+            url = f"chrome-extension://{extension_id}/{page_name}"
+            tab = await self.new_tab(url)
+            await asyncio.sleep(0.3)
+            await self.connect(tab.get("id"))
+            return {"status": "opened", "url": url, "tab": tab}
+        
+        temp_tab_id = None
+        current_url = ""
+        if self.is_connected:
+            try:
+                current_url = await self.evaluate("window.location.href") or ""
+            except Exception:
+                current_url = ""
+
+        try:
+            if "chrome://extensions" not in current_url:
+                tab_res = await self.open_system_page("extensions")
+                if tab_res.get("status") == "opened":
+                    temp_tab_id = tab_res.get("target", {}).get("id")
+                await asyncio.sleep(0.6)
+
+            if act == "enable":
+                js = f"chrome.developerPrivate.updateExtensionConfiguration({{id: {json.dumps(extension_id)}, state: 1}})"
+                await self.evaluate(js)
+                return {"status": "ok", "action": "enabled", "id": extension_id}
+            elif act == "disable":
+                js = f"chrome.developerPrivate.updateExtensionConfiguration({{id: {json.dumps(extension_id)}, state: 0}})"
+                await self.evaluate(js)
+                return {"status": "ok", "action": "disabled", "id": extension_id}
+            elif act == "reload":
+                js = f"chrome.developerPrivate.reload({json.dumps(extension_id)})"
+                await self.evaluate(js)
+                return {"status": "ok", "action": "reloaded", "id": extension_id}
+            else:
+                raise ValueError(f"Unknown extension action: {action!r}")
+        finally:
+            if temp_tab_id:
+                try:
+                    await self.close_tab(temp_tab_id)
+                except Exception:
+                    pass
+
+    async def get_performance_metrics(self) -> Dict[str, Any]:
+        """Retrieve browser performance and memory metrics."""
+        await self.send("Performance.enable")
+        res = await self.send("Performance.getMetrics")
+        metrics_list = res.get("metrics", [])
+        return {m["name"]: m["value"] for m in metrics_list}

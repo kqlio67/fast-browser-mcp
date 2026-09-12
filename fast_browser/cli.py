@@ -142,6 +142,40 @@ async def run_cli():
     ss_p.add_argument("--full-page", action="store_true", help="Capture entire scrollable page")
     ss_p.add_argument("--selector", help="Capture specific element")
 
+    # window
+    win_p = subparsers.add_parser("window", help="Manage browser window bounds and state")
+    win_p.add_argument("--state", choices=["normal", "minimized", "maximized", "fullscreen"], help="Window state")
+    win_p.add_argument("--width", type=int, help="Width in pixels")
+    win_p.add_argument("--height", type=int, help="Height in pixels")
+    win_p.add_argument("--left", type=int, help="Left position")
+    win_p.add_argument("--top", type=int, help="Top position")
+
+    # system-page
+    sys_p = subparsers.add_parser("system-page", help="Open or switch to a system page (settings, extensions, downloads, flags, etc.)")
+    sys_p.add_argument("page", help="System page name (e.g. settings, extensions, downloads, history, flags)")
+
+    # extensions
+    subparsers.add_parser("extensions", help="List all installed extensions")
+
+    # extension-action
+    ext_act_p = subparsers.add_parser("extension-action", help="Perform action on an extension")
+    ext_act_p.add_argument("id", help="Extension ID")
+    ext_act_p.add_argument("action", choices=["enable", "disable", "reload", "options", "popup"], help="Action to perform")
+
+    # system-info
+    subparsers.add_parser("system-info", help="Display browser and CDP protocol version info")
+
+    # download-path
+    dl_p = subparsers.add_parser("download-path", help="Set browser download directory")
+    dl_p.add_argument("path", help="Download directory path")
+    dl_p.add_argument("--behavior", choices=["allow", "deny", "default"], default="allow", help="Download behavior")
+
+    # permissions
+    perm_p = subparsers.add_parser("permissions", help="Grant or reset browser permissions")
+    perm_p.add_argument("permissions", nargs="*", default=[], help="Permissions to grant (e.g. clipboardReadWrite notifications)")
+    perm_p.add_argument("--origin", help="Target origin")
+    perm_p.add_argument("--reset", action="store_true", help="Reset all permissions")
+
     args = parser.parse_args()
 
     cdp = CDPClient(host=args.host, port=args.port)
@@ -163,6 +197,50 @@ async def run_cli():
     elif args.command == "close-tab":
         res = await cdp.close_tab(args.id)
         print("Closed" if res else "Failed to close")
+        return
+
+    elif args.command == "window":
+        if args.state or any(v is not None for v in [args.width, args.height, args.left, args.top]):
+            await cdp.set_window_bounds(state=args.state, width=args.width, height=args.height, left=args.left, top=args.top)
+            bounds = await cdp.get_window_bounds()
+            print(f"Window bounds updated: {json.dumps(bounds.get('bounds'), ensure_ascii=False)}")
+        else:
+            bounds = await cdp.get_window_bounds()
+            print(json.dumps(bounds, ensure_ascii=False, indent=2))
+        return
+
+    elif args.command == "system-page":
+        res = await cdp.open_system_page(args.page)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return
+
+    elif args.command == "extensions":
+        exts = await cdp.list_extensions()
+        print(json.dumps(exts, ensure_ascii=False, indent=2))
+        return
+
+    elif args.command == "extension-action":
+        res = await cdp.extension_action(args.id, args.action)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return
+
+    elif args.command == "system-info":
+        ver = cdp.get_browser_version()
+        print(json.dumps(ver, ensure_ascii=False, indent=2))
+        return
+
+    elif args.command == "download-path":
+        await cdp.set_download_path(args.path, behavior=args.behavior)
+        print(f"Download path configured: {args.path} (behavior={args.behavior})")
+        return
+
+    elif args.command == "permissions":
+        if args.reset:
+            await cdp.reset_permissions()
+            print("All browser permissions reset")
+        else:
+            await cdp.grant_permissions(args.permissions, origin=args.origin)
+            print(f"Granted permissions: {args.permissions}")
         return
 
     # For other commands, connect to tab

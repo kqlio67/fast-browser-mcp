@@ -444,6 +444,66 @@ class BatchRunner:
                         step_res["detail"] = f"Screenshot captured ({len(data_b64)} b64 bytes)"
                     step_res["status"] = "ok"
 
+                elif action == "window":
+                    state = step.get("state")
+                    width = step.get("width")
+                    height = step.get("height")
+                    left = step.get("left")
+                    top = step.get("top")
+                    if any(v is not None for v in [state, width, height, left, top]):
+                        await self.cdp.set_window_bounds(state=state, width=width, height=height, left=left, top=top)
+                        step_res["detail"] = f"Window updated: state={state}, size={width}x{height}, pos=({left}, {top})"
+                    else:
+                        win = await self.cdp.get_window_bounds()
+                        step_res["window"] = win
+                        step_res["detail"] = f"Window bounds: {win.get('bounds')}"
+                    step_res["status"] = "ok"
+
+                elif action == "system_page":
+                    page = step.get("page") or step.get("url")
+                    if not page:
+                        raise ValueError("system_page action requires 'page' or 'url'")
+                    res = await self.cdp.open_system_page(page)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"System page {page!r}: {res.get('status')}"
+                    step_res["target"] = res.get("target")
+
+                elif action == "extensions":
+                    exts = await self.cdp.list_extensions()
+                    step_res["status"] = "ok"
+                    step_res["extensions"] = exts
+                    step_res["detail"] = f"Found {len(exts)} extensions"
+
+                elif action == "extension_action":
+                    ext_id = step.get("id") or step.get("extension_id")
+                    ext_action = step.get("action_type") or step.get("subaction")
+                    if not ext_id or not ext_action:
+                        raise ValueError("extension_action requires 'id' and 'action_type' ('enable', 'disable', 'reload', 'options', 'popup')")
+                    res = await self.cdp.extension_action(ext_id, ext_action)
+                    step_res["status"] = "ok"
+                    step_res["result"] = res
+
+                elif action == "set_download_path":
+                    dl_path = step.get("path")
+                    if not dl_path:
+                        raise ValueError("set_download_path requires 'path'")
+                    behavior = step.get("behavior", "allow")
+                    await self.cdp.set_download_path(dl_path, behavior=behavior)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Download path set to {dl_path}"
+
+                elif action == "grant_permissions":
+                    perms = step.get("permissions", [])
+                    origin = step.get("origin")
+                    await self.cdp.grant_permissions(perms, origin=origin)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Granted permissions: {perms}"
+
+                elif action == "system_info":
+                    ver = self.cdp.get_browser_version()
+                    step_res["status"] = "ok"
+                    step_res["browser_version"] = ver
+
                 else:
                     raise ValueError(f"Unknown action: {action!r}")
 
