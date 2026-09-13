@@ -1,3 +1,4 @@
+import os
 import asyncio
 import json
 import base64
@@ -42,9 +43,35 @@ VALID_ACTIONS: Set[str] = {
 }
 
 class BatchRunner:
-    def __init__(self, cdp: CDPClient):
+    def __init__(self, cdp: CDPClient, allowed_dir: Optional[str] = None):
         self.cdp = cdp
         self.snapshot_tool = PageSnapshot(cdp)
+        self.allowed_dir = allowed_dir or os.environ.get("FAST_BROWSER_ALLOWED_DIR")
+
+    def validate_path(self, path: str, must_exist: bool = False, for_write: bool = False) -> str:
+        """Validate and resolve file path according to sandboxing rules."""
+        if not path or not isinstance(path, str):
+            raise ValueError("Invalid file path: path must be a non-empty string")
+
+        resolved = os.path.abspath(os.path.expanduser(path))
+
+        if self.allowed_dir:
+            allowed = os.path.abspath(os.path.expanduser(self.allowed_dir))
+            common = os.path.commonpath([resolved, allowed])
+            if common != allowed:
+                raise PermissionError(
+                    f"Access denied: path '{path}' is outside allowed directory '{self.allowed_dir}'"
+                )
+
+        if must_exist and not os.path.exists(resolved):
+            raise FileNotFoundError(f"File not found: '{resolved}'")
+
+        if for_write:
+            parent = os.path.dirname(resolved)
+            if parent and not os.path.exists(parent):
+                os.makedirs(parent, exist_ok=True)
+
+        return resolved
 
     @classmethod
     def validate_step(cls, step: Any, idx: int) -> Optional[str]:
@@ -428,28 +455,31 @@ class BatchRunner:
                     files = step.get("files", [])
                     if not selector or not files:
                         raise ValueError("upload_file requires 'selector' and 'files'")
-                    await self.cdp.upload_file(selector, files)
+                    safe_files = [self.validate_path(f, must_exist=True) for f in files]
+                    await self.cdp.upload_file(selector, safe_files)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Uploaded {len(files)} files to '{selector}'"
+                    step_res["detail"] = f"Uploaded {len(safe_files)} files to '{selector}'"
 
                 elif action == "get_html":
                     html = await self.cdp.get_html()
                     step_res["status"] = "ok"
                     path = step.get("save_path")
                     if path:
-                        with open(path, "w", encoding="utf-8") as f:
+                        safe_path = self.validate_path(path, for_write=True)
+                        with open(safe_path, "w", encoding="utf-8") as f:
                             f.write(html)
-                        step_res["detail"] = f"HTML saved to {path} ({len(html)} chars)"
+                        step_res["detail"] = f"HTML saved to {safe_path} ({len(html)} chars)"
                     else:
                         step_res["html"] = html[:10000]
 
                 elif action == "pdf":
                     path = step.get("save_path", "page.pdf")
+                    safe_path = self.validate_path(path, for_write=True)
                     b64 = await self.cdp.print_to_pdf(landscape=step.get("landscape", False))
-                    with open(path, "wb") as f:
+                    with open(safe_path, "wb") as f:
                         f.write(base64.b64decode(b64))
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"PDF saved to {path}"
+                    step_res["detail"] = f"PDF saved to {safe_path}"
 
                 elif action == "get_storage":
                     data = await self.cdp.get_storage()
@@ -458,9 +488,10 @@ class BatchRunner:
 
                 elif action == "export_traffic":
                     path = step.get("save_path", "traffic_export.json")
-                    self.cdp.network.export_to_file(path)
+                    safe_path = self.validate_path(path, for_write=True)
+                    self.cdp.network.export_to_file(safe_path)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Traffic exported to {path}"
+                    step_res["detail"] = f"Traffic exported to {safe_path}"
 
                 elif action == "console_logs":
                     limit = step.get("limit", 20)
@@ -537,9 +568,10 @@ class BatchRunner:
                     data_b64 = await self.cdp.capture_screenshot(full_page=full_page, clip_selector=clip_selector)
                     path = step.get("save_path")
                     if path:
-                        with open(path, "wb") as f:
+                        safe_path = self.validate_path(path, for_write=True)
+                        with open(safe_path, "wb") as f:
                             f.write(base64.b64decode(data_b64))
-                        step_res["detail"] = f"Screenshot saved to {path} (full_page={full_page})"
+                        step_res["detail"] = f"Screenshot saved to {safe_path} (full_page={full_page})"
                     else:
                         step_res["detail"] = f"Screenshot captured ({len(data_b64)} b64 bytes)"
                     step_res["status"] = "ok"
