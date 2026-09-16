@@ -44,6 +44,8 @@ class CDPClient:
         self.dialog_action = "accept"
         self.dialog_prompt_text: Optional[str] = None
         self.last_dialog_message: Optional[str] = None
+        self.frame_sessions: Dict[str, Dict[str, Any]] = {}
+        self.ref_session_map: Dict[int, Optional[str]] = {}
         self.network = NetworkMonitor()
         self.console = ConsoleMonitor()
 
@@ -152,7 +154,27 @@ class CDPClient:
             await self.send("DOM.enable")
             await self.send("Network.enable", {"maxPostDataSize": 65536})
 
+            # Auto-attach to child targets (e.g. cross-origin iframes) in flattened mode
+            try:
+                await self.send("Target.setAutoAttach", {
+                    "autoAttach": True,
+                    "waitForDebuggerOnStart": False,
+                    "flatten": True
+                })
+            except Exception as e:
+                logger.debug(f"Target.setAutoAttach failed or not supported: {e}")
+
+    async def _init_frame_session(self, session_id: str):
+        try:
+            await self.send("Runtime.enable", session_id=session_id)
+            await self.send("DOM.enable", session_id=session_id)
+            await self.send("Page.enable", session_id=session_id)
+        except Exception as e:
+            logger.debug(f"Failed to init child frame session {session_id}: {e}")
+
     async def close(self):
+        self.frame_sessions.clear()
+        self.ref_session_map.clear()
         if self._listen_task:
             self._listen_task.cancel()
             try:
@@ -206,6 +228,28 @@ class CDPClient:
                             d_params["promptText"] = self.dialog_prompt_text
                         asyncio.create_task(self.send("Page.handleJavaScriptDialog", d_params))
 
+                # Child target attachment (cross-origin iframes / OOPIF)
+                elif method == "Target.attachedToTarget":
+                    session_id = params.get("sessionId")
+                    target_info = params.get("targetInfo", {})
+                    target_type = target_info.get("type")
+                    if session_id:
+                        if target_type == "iframe":
+                            self.frame_sessions[session_id] = target_info
+                            logger.debug(f"Attached to child iframe session {session_id} (url={target_info.get('url')})")
+                            asyncio.create_task(self._init_frame_session(session_id))
+                        if params.get("waitingForDebugger"):
+                            asyncio.create_task(self.send("Runtime.runIfWaitingForDebugger", session_id=session_id))
+
+                elif method == "Target.detachedFromTarget":
+                    session_id = params.get("sessionId")
+                    if session_id and session_id in self.frame_sessions:
+                        self.frame_sessions.pop(session_id, None)
+                        stale_refs = [r for r, sid in self.ref_session_map.items() if sid == session_id]
+                        for r in stale_refs:
+                            self.ref_session_map.pop(r, None)
+                        logger.debug(f"Detached child iframe session {session_id}")
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -216,7 +260,7 @@ class CDPClient:
                     fut.set_exception(ConnectionResetError("CDP WebSocket connection was closed"))
             self._pending_requests.clear()
 
-    async def send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+    async def send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0, session_id: Optional[str] = None) -> Dict[str, Any]:
         if not self.is_connected:
             if self.target_id:
                 try:
@@ -230,6 +274,8 @@ class CDPClient:
         self._req_id += 1
         req_id = self._req_id
         payload = {"id": req_id, "method": method, "params": params or {}}
+        if session_id:
+            payload["sessionId"] = session_id
 
         fut = asyncio.get_running_loop().create_future()
         self._pending_requests[req_id] = fut
@@ -253,7 +299,7 @@ class CDPClient:
             self._pending_requests.pop(req_id, None)
             raise TimeoutError(f"CDP command {method} (id={req_id}) timed out after {timeout}s")
 
-    async def evaluate(self, expression: str, await_promise: bool = True, timeout: float = 10.0) -> Any:
+    async def evaluate(self, expression: str, await_promise: bool = True, timeout: float = 10.0, session_id: Optional[str] = None) -> Any:
         expr = expression.strip()
         if "return " in expr and not (expr.startswith("(") or expr.startswith("function") or expr.startswith("async")):
             expr = f"(() => {{ {expr} }})()"
@@ -264,7 +310,7 @@ class CDPClient:
             "awaitPromise": await_promise,
             "userGesture": True
         }
-        res = await self.send("Runtime.evaluate", params, timeout=timeout)
+        res = await self.send("Runtime.evaluate", params, timeout=timeout, session_id=session_id)
         result_obj = res.get("result", {})
         if res.get("exceptionDetails"):
             exc = res["exceptionDetails"]
@@ -1274,15 +1320,17 @@ class CDPClient:
         return {"success": True, "permissions": permissions, "origin": origin}
 
     # Universal Raw CDP Method (God Mode)
-    async def send_cdp(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+    async def send_cdp(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Send any raw Chrome DevTools Protocol command directly."""
-        return await self.send(method, params or {}, timeout=timeout)
+        return await self.send(method, params or {}, timeout=timeout, session_id=session_id)
 
     # CSS Styles Inspection
     async def get_css_styles(self, selector: Optional[str] = None, ref: Optional[str] = None) -> Dict[str, Any]:
         """Inspect computed CSS styles and matched rules for an element."""
+        session_id = None
         if ref:
             id_num = int(str(ref).replace("@", ""))
+            session_id = self.ref_session_map.get(id_num)
             target_el = f"window.__fb_refs && window.__fb_refs[{id_num}]"
         elif selector:
             target_el = f"document.querySelector({json.dumps(selector)})"
@@ -1330,7 +1378,7 @@ class CDPClient:
                 matchedRules: matchedRules.slice(0, 20)
             }};
         }})()"""
-        res = await self.evaluate(js)
+        res = await self.evaluate(js, session_id=session_id)
         if not res:
             raise RuntimeError(f"Element not found for CSS style inspection (selector={selector}, ref={ref})")
         return res

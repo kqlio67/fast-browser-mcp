@@ -2,11 +2,11 @@ import json
 from typing import Dict, Any, List, Optional
 from .cdp import CDPClient
 
-SNAPSHOT_JS = """(() => {
+SNAPSHOT_JS = r"""(() => {
     window.__fb_refs = window.__fb_refs || {};
-    const refs = {};
+    const refs = %CLEAR_REFS% ? {} : window.__fb_refs;
     window.__fb_refs = refs;
-    let nextId = 1;
+    let nextId = %START_ID%;
 
     function isVisible(el) {
         if (!el) return false;
@@ -116,6 +116,7 @@ SNAPSHOT_JS = """(() => {
         }
 
         return {
+            id: id,
             ref: `@${id}`,
             tag: tag,
             role: role,
@@ -185,6 +186,7 @@ SNAPSHOT_JS = """(() => {
     const rootSelector = %ROOT_SELECTOR%;
     const onlyInViewport = %ONLY_IN_VIEWPORT%;
     const maxElements = %MAX_ELEMENTS%;
+    const defaultFramePrefix = %DEFAULT_FRAME_PREFIX%;
 
     let targetRoot = document;
     if (rootSelector) {
@@ -194,7 +196,7 @@ SNAPSHOT_JS = """(() => {
         }
     }
 
-    let allDescriptors = collectFromRoot(targetRoot);
+    let allDescriptors = collectFromRoot(targetRoot, defaultFramePrefix);
 
     // Recursively collect from accessible iframes if whole document
     if (!rootSelector) {
@@ -233,6 +235,8 @@ SNAPSHOT_JS = """(() => {
         in_viewport: onlyInViewport,
         headings: headings,
         interactive: allDescriptors.map(d => d.desc),
+        ref_ids: allDescriptors.map(d => d.id),
+        next_id: nextId,
         count: allDescriptors.length,
         total_count: totalFound,
         truncated: truncated
@@ -243,11 +247,22 @@ class PageSnapshot:
     def __init__(self, cdp: CDPClient):
         self.cdp = cdp
 
-    def build_snapshot_js(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> str:
+    def build_snapshot_js(
+        self,
+        selector: Optional[str] = None,
+        in_viewport: bool = False,
+        max_elements: Optional[int] = None,
+        start_id: int = 1,
+        clear_refs: bool = True,
+        default_frame_prefix: str = ""
+    ) -> str:
         js = SNAPSHOT_JS
         js = js.replace("%ROOT_SELECTOR%", json.dumps(selector))
         js = js.replace("%ONLY_IN_VIEWPORT%", "true" if in_viewport else "false")
         js = js.replace("%MAX_ELEMENTS%", json.dumps(max_elements))
+        js = js.replace("%START_ID%", str(int(start_id)))
+        js = js.replace("%CLEAR_REFS%", "true" if clear_refs else "false")
+        js = js.replace("%DEFAULT_FRAME_PREFIX%", json.dumps(default_frame_prefix))
         return js
 
     async def capture(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> Dict[str, Any]:
@@ -269,8 +284,78 @@ class PageSnapshot:
                 await self.cdp.evaluate(ready_js, timeout=3.0)
             except Exception:
                 pass
-        js = self.build_snapshot_js(selector=selector, in_viewport=in_viewport, max_elements=max_elements)
+
+        self.cdp.ref_session_map.clear()
+        js = self.build_snapshot_js(selector=selector, in_viewport=in_viewport, max_elements=max_elements, start_id=1, clear_refs=True, default_frame_prefix="")
         data = await self.cdp.evaluate(js)
+        if not data or not isinstance(data, dict):
+            return {
+                "title": "",
+                "url": url or "",
+                "root": selector or "document",
+                "in_viewport": in_viewport,
+                "headings": [],
+                "interactive": [],
+                "count": 0,
+                "total_count": 0,
+                "truncated": False
+            }
+
+        for rid in data.get("ref_ids", []):
+            self.cdp.ref_session_map[rid] = None
+
+        next_id = data.get("next_id", len(data.get("interactive", [])) + 1)
+
+        # Cross-origin iframe child targets (OOPIF)
+        if not selector and getattr(self.cdp, "frame_sessions", None):
+            import urllib.parse
+            for session_id, target_info in list(self.cdp.frame_sessions.items()):
+                if target_info.get("type") != "iframe":
+                    continue
+                frame_url = target_info.get("url", "")
+                frame_title = target_info.get("title", "")
+                try:
+                    parsed = urllib.parse.urlparse(frame_url)
+                    host = parsed.netloc or parsed.path
+                except Exception:
+                    host = ""
+                frame_name = host or frame_title or "frame"
+                frame_prefix = f"(iframe:{frame_name}) "
+
+                rem_elements = (max_elements - len(data["interactive"])) if (max_elements and max_elements > 0) else None
+                if max_elements and max_elements > 0 and rem_elements is not None and rem_elements <= 0:
+                    data["truncated"] = True
+                    break
+
+                child_js = self.build_snapshot_js(
+                    selector=None,
+                    in_viewport=in_viewport,
+                    max_elements=rem_elements,
+                    start_id=next_id,
+                    clear_refs=True,
+                    default_frame_prefix=frame_prefix
+                )
+                try:
+                    child_data = await self.cdp.evaluate(child_js, session_id=session_id)
+                    if child_data and isinstance(child_data, dict):
+                        for rid in child_data.get("ref_ids", []):
+                            self.cdp.ref_session_map[rid] = session_id
+                        child_interactive = child_data.get("interactive", [])
+                        data["interactive"].extend(child_interactive)
+                        for h in child_data.get("headings", []):
+                            data["headings"].append(f"({frame_name}) {h}")
+                        data["total_count"] = data.get("total_count", 0) + child_data.get("total_count", len(child_interactive))
+                        if child_data.get("truncated"):
+                            data["truncated"] = True
+                        next_id = child_data.get("next_id", next_id + len(child_interactive))
+                except Exception:
+                    pass
+
+        if max_elements and max_elements > 0 and len(data["interactive"]) > max_elements:
+            data["interactive"] = data["interactive"][:max_elements]
+            data["truncated"] = True
+        data["count"] = len(data["interactive"])
+
         return data
 
     async def capture_formatted(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> str:

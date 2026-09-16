@@ -1,9 +1,11 @@
 import unittest
 import asyncio
 import time
+from unittest.mock import AsyncMock
 from fast_browser.network import NetworkMonitor, InFlightTracker
 from fast_browser.batch import BatchRunner
 from fast_browser.cdp import CDPClient
+from fast_browser.snapshot import PageSnapshot
 try:
     from .base import BaseBrowserTest
 except ImportError:
@@ -219,6 +221,140 @@ class TestArchitecture(BaseBrowserTest):
             res = await client.navigate("about:blank", wait_until_loaded=True, timeout=5.0)
             self.assertIn("frameId", res)
             await client.close()
+
+        asyncio.run(run())
+
+    def test_cross_origin_iframe_session_management(self):
+        client = CDPClient(port=self.test_port)
+        self.assertEqual(len(client.frame_sessions), 0)
+        self.assertEqual(len(client.ref_session_map), 0)
+
+        # Simulate Target.attachedToTarget for iframe
+        params_iframe = {
+            "sessionId": "session_frame_1",
+            "targetInfo": {
+                "targetId": "target_1",
+                "type": "iframe",
+                "url": "https://widget.stripe.com/checkout",
+                "title": "Stripe Checkout"
+            }
+        }
+        client.frame_sessions["session_frame_1"] = params_iframe["targetInfo"]
+        client.ref_session_map[10] = "session_frame_1"
+        client.ref_session_map[1] = None
+
+        self.assertIn("session_frame_1", client.frame_sessions)
+        self.assertEqual(client.ref_session_map[10], "session_frame_1")
+        self.assertIsNone(client.ref_session_map[1])
+
+        # Simulate Target.detachedFromTarget
+        client.frame_sessions.pop("session_frame_1", None)
+        stale_refs = [r for r, sid in client.ref_session_map.items() if sid == "session_frame_1"]
+        for r in stale_refs:
+            client.ref_session_map.pop(r, None)
+
+        self.assertNotIn("session_frame_1", client.frame_sessions)
+        self.assertNotIn(10, client.ref_session_map)
+        self.assertIn(1, client.ref_session_map)
+
+    def test_cross_origin_iframe_snapshot_and_ref_routing(self):
+        client = CDPClient(port=self.test_port)
+        snapshot = PageSnapshot(client)
+
+        client.frame_sessions["sess_frame_2"] = {
+            "type": "iframe",
+            "url": "https://pay.example.com/embed",
+            "title": "Payment Embed"
+        }
+
+        eval_calls = []
+
+        async def mock_evaluate(expr, await_promise=True, timeout=10.0, session_id=None):
+            eval_calls.append({"expr": expr, "session_id": session_id})
+            if expr.strip() == "window.location.href":
+                return "https://main.example.com"
+            if session_id is None:
+                return {
+                    "title": "Main Store",
+                    "url": "https://main.example.com",
+                    "root": "document",
+                    "in_viewport": False,
+                    "headings": ["H1: Welcome Store"],
+                    "interactive": ['@1 [button] "Checkout"'],
+                    "ref_ids": [1],
+                    "next_id": 2,
+                    "count": 1,
+                    "total_count": 1,
+                    "truncated": False
+                }
+            elif session_id == "sess_frame_2":
+                return {
+                    "title": "Payment Embed",
+                    "url": "https://pay.example.com/embed",
+                    "root": "document",
+                    "in_viewport": False,
+                    "headings": ["H2: Enter Card"],
+                    "interactive": ['@2 (iframe:pay.example.com) [input] [type=text name="card"]'],
+                    "ref_ids": [2],
+                    "next_id": 3,
+                    "count": 1,
+                    "total_count": 1,
+                    "truncated": False
+                }
+            return None
+
+        client.evaluate = mock_evaluate
+
+        async def run():
+            data = await snapshot.capture()
+            self.assertEqual(data["title"], "Main Store")
+            self.assertEqual(len(data["interactive"]), 2)
+            self.assertEqual(data["interactive"][0], '@1 [button] "Checkout"')
+            self.assertEqual(data["interactive"][1], '@2 (iframe:pay.example.com) [input] [type=text name="card"]')
+            self.assertEqual(client.ref_session_map[1], None)
+            self.assertEqual(client.ref_session_map[2], "sess_frame_2")
+
+            # BatchRunner routing
+            runner = BatchRunner(client)
+            client.evaluate = AsyncMock(return_value=True)
+
+            # Click ref @2 (child frame session)
+            res2 = await runner.execute([{"action": "click", "ref": "@2"}])
+            self.assertTrue(res2["success"])
+            client.evaluate.assert_called_once()
+            _, kwargs2 = client.evaluate.call_args
+            self.assertEqual(kwargs2.get("session_id"), "sess_frame_2")
+
+            # Click ref @1 (main page session)
+            client.evaluate.reset_mock()
+            res1 = await runner.execute([{"action": "click", "ref": "@1"}])
+            self.assertTrue(res1["success"])
+            client.evaluate.assert_called_once()
+            _, kwargs1 = client.evaluate.call_args
+            self.assertIsNone(kwargs1.get("session_id"))
+
+        asyncio.run(run())
+
+    def test_browser_iframe_snapshot_live(self):
+        async def run():
+            await self.cdp.connect(target_id=self.tab_id)
+            page_html = (
+                "<html><body>"
+                "<button id='main-btn'>Main Button</button>"
+                "<iframe id='sub-frame' srcdoc='<html><body><button id=\"sub-btn\">Sub Frame Button</button></body></html>'></iframe>"
+                "</body></html>"
+            )
+            data_url = "data:text/html;charset=utf-8," + page_html
+            await self.cdp.navigate(data_url)
+            await asyncio.sleep(0.3)
+
+            snapshot = PageSnapshot(self.cdp)
+            snap = await snapshot.capture()
+            self.assertIsInstance(snap, dict)
+            self.assertGreaterEqual(snap.get("count", 0), 1)
+            button_texts = " ".join(snap.get("interactive", []))
+            self.assertIn("Main Button", button_texts)
+            await self.cdp.close()
 
         asyncio.run(run())
 

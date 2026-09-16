@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
 [![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
+[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
 Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 
@@ -216,7 +216,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_print_to_pdf` | Print page to PDF file with landscape/background options |
 | `browser_eval` | Evaluate arbitrary JavaScript expressions in the page context |
 
-### 🛠️ DevTools Superpowers & Deep Inspection (v0.8.0)
+### 🛠️ DevTools Superpowers & Deep Inspection (v0.9.0)
 | Tool | Description |
 |---|---|
 | `browser_cdp_send` | **Universal CDP Raw Dispatcher**: Execute any of the 1,000+ Chrome DevTools Protocol commands directly (e.g. `DOM.enable`, `Storage.getCookies`, `Emulation.setDeviceMetricsOverride`, `Security.enable`, etc.) |

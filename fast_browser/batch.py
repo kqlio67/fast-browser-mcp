@@ -163,6 +163,7 @@ class BatchRunner:
                     selector = step.get("selector")
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
                         js = f"""(() => {{
                             const el = window.__fb_refs && window.__fb_refs[{id_num}];
                             if (!el) return false;
@@ -170,7 +171,7 @@ class BatchRunner:
                             el.click();
                             return true;
                         }})()"""
-                        success = await self.cdp.evaluate(js)
+                        success = await self.cdp.evaluate(js, session_id=session_id)
                         if not success:
                             raise RuntimeError(f"Reference {ref} not found or expired. Run 'snapshot' again.")
                         step_res["detail"] = f"Clicked ref {ref}"
@@ -186,9 +187,25 @@ class BatchRunner:
                     selector = step.get("selector")
                     x = step.get("x")
                     y = step.get("y")
+                    id_num = int(str(ref).replace("@", "")) if ref else None
+                    session_id = self.cdp.ref_session_map.get(id_num) if id_num is not None else None
                     if ref or selector:
+                        if session_id:
+                            js = f"""(() => {{
+                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                if (!el) return false;
+                                el.scrollIntoView({{block: 'center', inline: 'center'}});
+                                el.dispatchEvent(new MouseEvent('dblclick', {{ bubbles: true, cancelable: true, view: window }}));
+                                return true;
+                            }})()"""
+                            success = await self.cdp.evaluate(js, session_id=session_id)
+                            if not success:
+                                raise RuntimeError("Element not found for double_click in iframe")
+                            step_res["status"] = "ok"
+                            step_res["detail"] = f"Double clicked ref {ref} in iframe"
+                            continue
                         js = f"""(() => {{
-                            const el = {f'window.__fb_refs[{int(str(ref).replace("@", ""))}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            const el = {f'window.__fb_refs[{id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
                             if (!el) return null;
                             const r = el.getBoundingClientRect();
                             return {{x: r.x + r.width/2, y: r.y + r.height/2}};
@@ -208,9 +225,25 @@ class BatchRunner:
                     selector = step.get("selector")
                     x = step.get("x")
                     y = step.get("y")
+                    id_num = int(str(ref).replace("@", "")) if ref else None
+                    session_id = self.cdp.ref_session_map.get(id_num) if id_num is not None else None
                     if ref or selector:
+                        if session_id:
+                            js = f"""(() => {{
+                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                if (!el) return false;
+                                el.scrollIntoView({{block: 'center', inline: 'center'}});
+                                el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, view: window }}));
+                                return true;
+                            }})()"""
+                            success = await self.cdp.evaluate(js, session_id=session_id)
+                            if not success:
+                                raise RuntimeError("Element not found for right_click in iframe")
+                            step_res["status"] = "ok"
+                            step_res["detail"] = f"Right clicked ref {ref} in iframe"
+                            continue
                         js = f"""(() => {{
-                            const el = {f'window.__fb_refs[{int(str(ref).replace("@", ""))}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            const el = {f'window.__fb_refs[{id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
                             if (!el) return null;
                             const r = el.getBoundingClientRect();
                             return {{x: r.x + r.width/2, y: r.y + r.height/2}};
@@ -273,6 +306,7 @@ class BatchRunner:
 
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
                         js = f"""(() => {{
                             const el = window.__fb_refs && window.__fb_refs[{id_num}];
                             if (!el) return false;
@@ -284,7 +318,7 @@ class BatchRunner:
                             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                             return true;
                         }})()"""
-                        success = await self.cdp.evaluate(js)
+                        success = await self.cdp.evaluate(js, session_id=session_id)
                         if not success:
                             raise RuntimeError(f"Reference {ref} not found or expired. Run 'snapshot' again.")
                         step_res["detail"] = f"Filled ref {ref} with {text!r}"
@@ -311,13 +345,14 @@ class BatchRunner:
 
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
                         js = f"""(() => {{
                             const el = window.__fb_refs && window.__fb_refs[{id_num}];
                             if (!el) return false;
                             el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
                             return true;
                         }})()"""
-                        await self.cdp.evaluate(js)
+                        await self.cdp.evaluate(js, session_id=session_id)
                         step_res["detail"] = f"Scrolled to ref {ref}"
                     elif selector:
                         await self.cdp.scroll_to_element(selector)
@@ -335,6 +370,7 @@ class BatchRunner:
 
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
                         js = f"""(() => {{
                             const el = window.__fb_refs && window.__fb_refs[{id_num}];
                             if (!el || el.tagName.toLowerCase() !== 'select') return false;
@@ -353,7 +389,7 @@ class BatchRunner:
                             }}
                             return false;
                         }})()"""
-                        success = await self.cdp.evaluate(js)
+                        success = await self.cdp.evaluate(js, session_id=session_id)
                         if not success:
                             raise RuntimeError(f"Could not select option in ref {ref}")
                         step_res["detail"] = f"Selected option in ref {ref}"
@@ -371,6 +407,7 @@ class BatchRunner:
                     selector = step.get("selector")
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
                         js = f"""(() => {{
                             const el = window.__fb_refs && window.__fb_refs[{id_num}];
                             if (!el) return false;
@@ -378,7 +415,7 @@ class BatchRunner:
                             el.dispatchEvent(new MouseEvent('mouseenter', {{ bubbles: true }}));
                             return true;
                         }})()"""
-                        await self.cdp.evaluate(js)
+                        await self.cdp.evaluate(js, session_id=session_id)
                         step_res["detail"] = f"Hovered ref {ref}"
                     elif selector:
                         js = f"""(() => {{

@@ -12,7 +12,7 @@ from .batch import BatchRunner
 from .network import NetworkMonitor, ConsoleMonitor
 from .server import MCPServer
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 __author__ = "kqlio67"
 __license__ = "MIT"
 

@@ -809,7 +809,8 @@ TOOLS = [
             "properties": {
                 "method": {"type": "string", "description": "CDP method name (e.g. 'DOM.getBoxModel', 'Page.printToPDF')"},
                 "params": {"type": "object", "description": "Optional parameters dictionary for the CDP command"},
-                "timeout": {"type": "number", "default": 10.0, "description": "Command timeout in seconds"}
+                "timeout": {"type": "number", "default": 10.0, "description": "Command timeout in seconds"},
+                "session_id": {"type": "string", "description": "Optional child target session ID (e.g. for cross-origin iframes)"}
             },
             "required": ["method"]
         }
@@ -1381,7 +1382,8 @@ async def _handle_cdp_send(server: "MCPServer", args: Dict[str, Any]) -> str:
     res = await server.cdp.send_cdp(
         method=args["method"],
         params=args.get("params"),
-        timeout=args.get("timeout", 10.0)
+        timeout=args.get("timeout", 10.0),
+        session_id=args.get("session_id")
     )
     return json.dumps(res, ensure_ascii=False, indent=2)
 
@@ -1541,7 +1543,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.8.0"
+                                "version": "0.9.0"
                             }
                         }
                     }
