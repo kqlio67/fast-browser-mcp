@@ -355,15 +355,6 @@ async def run_cli():
         "timezone", help="Timezone name (e.g. America/New_York, Europe/Kyiv, UTC)"
     )
 
-    # permissions
-    perm_p = subparsers.add_parser("permissions", help="Grant browser permissions")
-    perm_p.add_argument(
-        "permissions",
-        nargs="+",
-        help="Permissions to grant (e.g. geolocation notifications)",
-    )
-    perm_p.add_argument("--origin", help="Target origin")
-
     # cdp-send
     cdp_p = subparsers.add_parser(
         "cdp-send", help="Universal raw CDP command invoker (God Mode)"
@@ -750,12 +741,6 @@ async def run_cli():
 
     elif args.command == "timezone":
         res = await cdp.set_timezone(timezone_id=args.timezone)
-        print(json.dumps(res, ensure_ascii=False, indent=2))
-
-    elif args.command == "permissions":
-        res = await cdp.grant_permissions(
-            permissions=args.permissions, origin=args.origin
-        )
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     elif args.command == "cdp-send":
