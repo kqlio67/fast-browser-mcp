@@ -1,5 +1,6 @@
 import asyncio
 import json
+import base64
 import logging
 import os
 
@@ -222,6 +223,17 @@ class CDPClient:
                     self.console.handle_event(method, params)
 
                 # Automatic Dialog handling (alert, confirm, prompt)
+                elif method == "Page.screencastFrame":
+                    if getattr(self, "_screencast_process", None):
+                        data = params.get("data")
+                        session_id = params.get("sessionId")
+                        try:
+                            self._screencast_process.stdin.write(base64.b64decode(data))
+                        except Exception as e:
+                            logger.error(f"Failed to write screencast frame: {e}")
+                        # Acknowledge frame
+                        asyncio.create_task(self.send_cdp("Page.screencastFrameAck", {"sessionId": session_id}))
+
                 elif method == "Page.javascriptDialogOpening":
                     self.last_dialog_message = params.get("message")
                     logger.warning(f"JavaScript dialog opened: {self.last_dialog_message!r} (type={params.get('type')})")
@@ -1407,3 +1419,30 @@ class CDPClient:
             d_params["promptText"] = prompt_text
         await self.send("Page.handleJavaScriptDialog", d_params)
         return {"action": action, "prompt_text": prompt_text, "handled": True}
+
+    async def start_screencast(self, file_path: str, format: str = "jpeg") -> dict:
+        if getattr(self, "_screencast_process", None):
+            raise RuntimeError("Screencast is already running.")
+        
+        self._screencast_process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-f", "image2pipe", "-vcodec", "mjpeg" if format == "jpeg" else "png",
+            "-r", "15", "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", file_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        
+        return await self.send_cdp("Page.startScreencast", {"format": format, "quality": 80, "everyNthFrame": 1})
+
+    async def stop_screencast(self) -> dict:
+        if not getattr(self, "_screencast_process", None):
+            raise RuntimeError("No screencast is currently running.")
+        
+        await self.send_cdp("Page.stopScreencast")
+        
+        if self._screencast_process:
+            self._screencast_process.stdin.close()
+            await self._screencast_process.wait()
+            self._screencast_process = None
+        
+        return {"status": "stopped"}

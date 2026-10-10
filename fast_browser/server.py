@@ -862,7 +862,75 @@ TOOLS = [
             },
             "required": []
         }
-    }
+    },
+    {
+        "name": "browser_screencast_start",
+        "description": "Starts recording a screencast (video) of the target page and saves it as an MP4 file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute or relative file path to save the MP4 video (e.g. 'recording.mp4')."
+                }
+            },
+            "required": ["file_path"]
+        }
+    },
+    {
+        "name": "browser_screencast_stop",
+        "description": "Stops the active screencast recording.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_list_webmcp_tools",
+        "description": "List all WebMCP tools exposed by the current webpage via navigator.modelContext.getTools().",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "browser_execute_webmcp_tool",
+        "description": "Execute a WebMCP tool exposed by the current webpage.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name of the tool to execute"},
+                "arguments": {"type": "object", "description": "Arguments to pass to the tool"}
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "browser_fill_form",
+        "description": "Fill out multiple form elements (inputs, selects, checkboxes, radios) at once. Prefer this tool over multiple individual 'fill' or 'click' calls when interacting with forms. It is significantly faster and reduces turn count.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "elements": {
+                    "type": "array",
+                    "description": "Elements to fill out",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {"type": "string", "description": "Element reference from snapshot (e.g. '@1')"},
+                            "selector": {"type": "string", "description": "CSS selector of the element"},
+                            "text": {"type": "string", "description": "Text value to fill into the element (use 'true'/'false' for checkboxes/radios if supported, though for text inputs it's just the string to type)"},
+                            "clear": {"type": "boolean", "default": True, "description": "Clear before typing"}
+                        },
+                        "required": ["text"]
+                    }
+                }
+            },
+            "required": ["elements"]
+        }
+    },
 ]
 
 class ToolHandlerInfo(NamedTuple):
@@ -1389,6 +1457,64 @@ async def _handle_cdp_send(server: "MCPServer", args: dict[str, Any]) -> str:
     )
     return json.dumps(res, ensure_ascii=False, indent=2)
 
+
+
+@tool("browser_screencast_start")
+async def _handle_screencast_start(server: "MCPServer", args: dict[str, Any]) -> str:
+    path = args.get("file_path", "screencast.mp4")
+    safe_path = server.validate_path(path, for_write=True)
+    await server.cdp.start_screencast(safe_path)
+    return f"Screencast recording started. Saving to {safe_path}"
+
+@tool("browser_screencast_stop")
+async def _handle_screencast_stop(server: "MCPServer", args: dict[str, Any]) -> str:
+    res = await server.cdp.stop_screencast()
+    return "Screencast recording stopped and saved successfully."
+
+@tool("browser_list_webmcp_tools")
+async def _handle_list_webmcp_tools(server: "MCPServer", args: dict[str, Any]) -> str:
+    script = '''
+    if (navigator.modelContext && typeof navigator.modelContext.getTools === 'function') {
+        return await navigator.modelContext.getTools();
+    }
+    throw new Error('WebMCP is not supported or not exposed on this page.');
+    '''
+    try:
+        res = await server.cdp.evaluate(script, await_promise=True)
+        return json.dumps(res, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"Error listing WebMCP tools: {e}"
+
+@tool("browser_execute_webmcp_tool")
+async def _handle_execute_webmcp_tool(server: "MCPServer", args: dict[str, Any]) -> str:
+    name = args.get("name")
+    tool_args = args.get("arguments", {})
+    script = f'''
+    if (navigator.modelContext && typeof navigator.modelContext.executeTool === 'function') {{
+        return await navigator.modelContext.executeTool({json.dumps(name)}, {json.dumps(tool_args)});
+    }}
+    throw new Error('WebMCP is not supported or not exposed on this page.');
+    '''
+    try:
+        res = await server.cdp.evaluate(script, await_promise=True)
+        return json.dumps(res, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"Error executing WebMCP tool: {e}"
+
+@tool("browser_fill_form")
+async def _handle_fill_form(server: "MCPServer", args: dict[str, Any]) -> str:
+    elements = args.get("elements", [])
+    steps = []
+    for el in elements:
+        steps.append({
+            "action": "fill",
+            "ref": el.get("ref"),
+            "selector": el.get("selector"),
+            "text": el.get("text", ""),
+            "clear": el.get("clear", True)
+        })
+    res = await server.batch.execute(steps)
+    return json.dumps(res, ensure_ascii=False)
 
 # --- MCPServer Core ---
 
