@@ -1,35 +1,38 @@
-import os
 import asyncio
-import json
 import base64
+import json
+import os
 import time
-from typing import List, Dict, Any, Optional, Set, Union, TypedDict
+import aiofiles
+from typing import Any, TypedDict
+
 from .cdp import CDPClient
 from .snapshot import PageSnapshot
 
+
 class BatchStep(TypedDict, total=False):
     action: str
-    ref: Optional[str]
-    selector: Optional[str]
-    text: Optional[str]
-    url: Optional[str]
-    key: Optional[str]
-    script: Optional[str]
-    expression: Optional[str]
-    ms: Optional[int]
-    delta_x: Optional[int]
-    delta_y: Optional[int]
-    x: Optional[float]
-    y: Optional[float]
-    method: Optional[str]
-    params: Optional[Dict[str, Any]]
-    rate: Optional[float]
-    theme: Optional[str]
-    scale: Optional[float]
-    page: Optional[str]
-    profile: Optional[str]
+    ref: str | None
+    selector: str | None
+    text: str | None
+    url: str | None
+    key: str | None
+    script: str | None
+    expression: str | None
+    ms: int | None
+    delta_x: int | None
+    delta_y: int | None
+    x: float | None
+    y: float | None
+    method: str | None
+    params: dict[str, Any] | None
+    rate: float | None
+    theme: str | None
+    scale: float | None
+    page: str | None
+    profile: str | None
 
-VALID_ACTIONS: Set[str] = {
+VALID_ACTIONS: set[str] = {
     'back', 'block_resources', 'block_urls', 'cdp_send', 'cleanup_tabs', 'clear_cache', 'clear_cookies',
     'click', 'clipboard', 'console_logs', 'cpu_throttling', 'css_styles', 'double_click', 'drag_and_drop',
     'eval', 'export_traffic', 'extension_action', 'extensions', 'extract', 'fill', 'find', 'forward',
@@ -43,7 +46,7 @@ VALID_ACTIONS: Set[str] = {
 }
 
 class BatchRunner:
-    def __init__(self, cdp: CDPClient, allowed_dir: Optional[str] = None):
+    def __init__(self, cdp: CDPClient, allowed_dir: str | None = None):
         self.cdp = cdp
         self.snapshot_tool = PageSnapshot(cdp)
         self.allowed_dir = allowed_dir or os.environ.get("FAST_BROWSER_ALLOWED_DIR")
@@ -74,7 +77,7 @@ class BatchRunner:
         return resolved
 
     @classmethod
-    def validate_step(cls, step: Any, idx: int) -> Optional[str]:
+    def validate_step(cls, step: Any, idx: int) -> str | None:
         """Validate an individual batch step dictionary."""
         if not isinstance(step, dict):
             return f"Step {idx + 1}: expected action dictionary, got {type(step).__name__}"
@@ -111,7 +114,7 @@ class BatchRunner:
         return None
 
     @classmethod
-    def validate_pipeline(cls, steps: List[Dict[str, Any]]) -> List[str]:
+    def validate_pipeline(cls, steps: list[dict[str, Any]]) -> list[str]:
         """Pre-flight validate the entire batch pipeline before execution."""
         if not isinstance(steps, list):
             return ["Pipeline 'steps' must be a list of action dictionaries"]
@@ -122,7 +125,7 @@ class BatchRunner:
                 errors.append(err)
         return errors
 
-    async def execute(self, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def execute(self, steps: list[dict[str, Any]]) -> dict[str, Any]:
         # Pre-flight validation
         validation_errors = self.validate_pipeline(steps)
         if validation_errors:
@@ -135,13 +138,13 @@ class BatchRunner:
                 "results": []
             }
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         t0 = time.perf_counter()
 
         for idx, step in enumerate(steps):
             action = step.get("action", "").lower()
             step_t0 = time.perf_counter()
-            step_res: Dict[str, Any] = {"step": idx + 1, "action": action}
+            step_res: dict[str, Any] = {"step": idx + 1, "action": action}
 
             try:
                 if action == "navigate":
@@ -187,12 +190,12 @@ class BatchRunner:
                     selector = step.get("selector")
                     x = step.get("x")
                     y = step.get("y")
-                    id_num = int(str(ref).replace("@", "")) if ref else None
-                    session_id = self.cdp.ref_session_map.get(id_num) if id_num is not None else None
+                    opt_id_num = int(str(ref).replace("@", "")) if ref else None
+                    session_id = self.cdp.ref_session_map.get(opt_id_num) if opt_id_num is not None else None
                     if ref or selector:
                         if session_id:
                             js = f"""(() => {{
-                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                const el = window.__fb_refs && window.__fb_refs[{opt_id_num}];
                                 if (!el) return false;
                                 el.scrollIntoView({{block: 'center', inline: 'center'}});
                                 el.dispatchEvent(new MouseEvent('dblclick', {{ bubbles: true, cancelable: true, view: window }}));
@@ -205,7 +208,7 @@ class BatchRunner:
                             step_res["detail"] = f"Double clicked ref {ref} in iframe"
                             continue
                         js = f"""(() => {{
-                            const el = {f'window.__fb_refs[{id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            const el = {f'window.__fb_refs[{opt_id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
                             if (!el) return null;
                             const r = el.getBoundingClientRect();
                             return {{x: r.x + r.width/2, y: r.y + r.height/2}};
@@ -225,12 +228,12 @@ class BatchRunner:
                     selector = step.get("selector")
                     x = step.get("x")
                     y = step.get("y")
-                    id_num = int(str(ref).replace("@", "")) if ref else None
-                    session_id = self.cdp.ref_session_map.get(id_num) if id_num is not None else None
+                    opt_id_num = int(str(ref).replace("@", "")) if ref else None
+                    session_id = self.cdp.ref_session_map.get(opt_id_num) if opt_id_num is not None else None
                     if ref or selector:
                         if session_id:
                             js = f"""(() => {{
-                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                const el = window.__fb_refs && window.__fb_refs[{opt_id_num}];
                                 if (!el) return false;
                                 el.scrollIntoView({{block: 'center', inline: 'center'}});
                                 el.dispatchEvent(new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, view: window }}));
@@ -243,7 +246,7 @@ class BatchRunner:
                             step_res["detail"] = f"Right clicked ref {ref} in iframe"
                             continue
                         js = f"""(() => {{
-                            const el = {f'window.__fb_refs[{id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            const el = {f'window.__fb_refs[{opt_id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
                             if (!el) return null;
                             const r = el.getBoundingClientRect();
                             return {{x: r.x + r.width/2, y: r.y + r.height/2}};
@@ -259,11 +262,11 @@ class BatchRunner:
                     step_res["detail"] = f"Right clicked at ({x}, {y})"
 
                 elif action == "mouse_move":
-                    x = step.get("x", 0)
-                    y = step.get("y", 0)
-                    await self.cdp.mouse_move(x, y)
+                    mx = float(step.get("x", 0))
+                    my = float(step.get("y", 0))
+                    await self.cdp.mouse_move(mx, my)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Moved mouse to ({x}, {y})"
+                    step_res["detail"] = f"Moved mouse to ({mx}, {my})"
 
                 elif action == "drag_and_drop":
                     start_x = step.get("start_x")
@@ -294,7 +297,7 @@ class BatchRunner:
                     if any(v is None for v in [start_x, start_y, end_x, end_y]):
                         raise ValueError("drag_and_drop requires coordinates or from_ref/to_ref")
 
-                    await self.cdp.drag_and_drop(start_x, start_y, end_x, end_y)
+                    await self.cdp.drag_and_drop(float(start_x or 0), float(start_y or 0), float(end_x or 0), float(end_y or 0))
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})"
 
@@ -481,8 +484,8 @@ class BatchRunner:
                     step_res["detail"] = "Cleared browser cookies"
 
                 elif action == "set_cookie":
-                    name = step.get("name")
-                    val = step.get("value")
+                    name = str(step.get("name", ""))
+                    val = str(step.get("value", ""))
                     await self.cdp.set_cookie(name, val, domain=step.get("domain"), path=step.get("path", "/"))
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Set cookie {name}={val}"
@@ -503,8 +506,8 @@ class BatchRunner:
                     path = step.get("save_path")
                     if path:
                         safe_path = self.validate_path(path, for_write=True)
-                        with open(safe_path, "w", encoding="utf-8") as f:
-                            f.write(html)
+                        async with aiofiles.open(safe_path, "w", encoding="utf-8") as f:
+                            await f.write(html)
                         step_res["detail"] = f"HTML saved to {safe_path} ({len(html)} chars)"
                     else:
                         step_res["html"] = html[:10000]
@@ -513,8 +516,8 @@ class BatchRunner:
                     path = step.get("save_path", "page.pdf")
                     safe_path = self.validate_path(path, for_write=True)
                     b64 = await self.cdp.print_to_pdf(landscape=step.get("landscape", False))
-                    with open(safe_path, "wb") as f:
-                        f.write(base64.b64decode(b64))
+                    async with aiofiles.open(safe_path, "wb") as pdf_f:
+                        await pdf_f.write(base64.b64decode(b64))
                     step_res["status"] = "ok"
                     step_res["detail"] = f"PDF saved to {safe_path}"
 
@@ -526,7 +529,7 @@ class BatchRunner:
                 elif action == "export_traffic":
                     path = step.get("save_path", "traffic_export.json")
                     safe_path = self.validate_path(path, for_write=True)
-                    self.cdp.network.export_to_file(safe_path)
+                    await self.cdp.network.export_to_file(safe_path)
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Traffic exported to {safe_path}"
 
@@ -606,8 +609,8 @@ class BatchRunner:
                     path = step.get("save_path")
                     if path:
                         safe_path = self.validate_path(path, for_write=True)
-                        with open(safe_path, "wb") as f:
-                            f.write(base64.b64decode(data_b64))
+                        async with aiofiles.open(safe_path, "wb") as img_f:
+                            await img_f.write(base64.b64decode(data_b64))
                         step_res["detail"] = f"Screenshot saved to {safe_path} (full_page={full_page})"
                     else:
                         step_res["detail"] = f"Screenshot captured ({len(data_b64)} b64 bytes)"

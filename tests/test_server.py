@@ -1,13 +1,12 @@
-import os
-import sys
-import json
 import asyncio
+import json
+import os
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fast_browser.server import MCPServer, TOOLS, TOOL_REGISTRY
 from fast_browser.batch import BatchRunner
+from fast_browser.server import TOOL_REGISTRY, TOOLS, MCPServer
 
 
 class TestServerRegistryAndSchemas(unittest.TestCase):
@@ -118,7 +117,7 @@ class TestServerStdioTransport(unittest.IsolatedAsyncioTestCase):
         server = MCPServer()
         reader = asyncio.StreamReader()
         payload = json.dumps({"jsonrpc": "2.0", "id": 42, "method": "initialize"}).encode("utf-8")
-        header = f"Content-Length: {len(payload)}\r\n\r\n".encode("utf-8")
+        header = f"Content-Length: {len(payload)}\r\n\r\n".encode()
         reader.feed_data(header + payload)
         reader.feed_eof()
 

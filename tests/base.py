@@ -1,14 +1,16 @@
-import os
-import sys
-import time
-import socket
 import atexit
-import tempfile
+import os
 import shutil
+import socket
 import subprocess
-import requests
+import tempfile
+import time
 import unittest
+
+import requests
+
 from fast_browser.cdp import CDPClient
+
 
 class TestBrowserManager:
     _port = None

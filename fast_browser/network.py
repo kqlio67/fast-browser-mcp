@@ -1,14 +1,16 @@
-import time
 import json
-from typing import Dict, Any, List, Optional
+import time
+import aiofiles
 from collections import deque
+from typing import Any
+
 
 class ConsoleMonitor:
     def __init__(self, max_logs: int = 500):
         self.max_logs = max_logs
         self.logs: deque = deque(maxlen=max_logs)
 
-    def handle_event(self, method: str, params: Dict[str, Any]):
+    def handle_event(self, method: str, params: dict[str, Any]):
         t = time.strftime("%H:%M:%S")
 
         if method == "Runtime.consoleAPICalled":
@@ -50,7 +52,7 @@ class ConsoleMonitor:
                 "source": f"{url}:{line}" if url else ""
             })
 
-    def list_logs(self, log_type: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_logs(self, log_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         results = []
         for log in reversed(self.logs):
             if log_type and log_type.lower() != "all":
@@ -78,10 +80,10 @@ class NetworkMonitor:
     def __init__(self, max_requests: int = 300, max_ws_frames: int = 500):
         self.max_requests = max_requests
         self.max_ws_frames = max_ws_frames
-        self.requests: Dict[str, Dict[str, Any]] = {}
+        self.requests: dict[str, dict[str, Any]] = {}
         self.ordered_requests: deque = deque(maxlen=max_requests)
         self.ws_frames: deque = deque(maxlen=max_ws_frames)
-        self.ws_connections: Dict[str, str] = {}  # requestId -> url
+        self.ws_connections: dict[str, str] = {}  # requestId -> url
         self.in_flight_requests = InFlightTracker()
         self.last_activity_time: float = time.time()
 
@@ -93,11 +95,11 @@ class NetworkMonitor:
                 self.in_flight_requests.discard(rid)
         return len(self.in_flight_requests) == 0 and (now - self.last_activity_time) >= idle_time
 
-    def handle_event(self, method: str, params: Dict[str, Any]):
+    def handle_event(self, method: str, params: dict[str, Any]):
         t = time.strftime("%H:%M:%S")
 
         if method == "Network.requestWillBeSent":
-            req_id = params.get("requestId")
+            req_id = str(params.get("requestId", ""))
             req = params.get("request", {})
             req_type = params.get("type", "Other")
             if req_id and req_type not in ("EventSource", "WebSocket", "Ping"):
@@ -134,7 +136,7 @@ class NetworkMonitor:
 
         elif method == "Network.responseReceived":
             self.last_activity_time = time.time()
-            req_id = params.get("requestId")
+            req_id = str(params.get("requestId", ""))
             resp = params.get("response", {})
             if req_id in self.requests:
                 entry = self.requests[req_id]
@@ -145,13 +147,13 @@ class NetworkMonitor:
 
         elif method in ("Network.loadingFinished", "Network.loadingFailed"):
             self.last_activity_time = time.time()
-            req_id = params.get("requestId")
+            req_id = str(params.get("requestId", ""))
             if req_id:
                 self.in_flight_requests.discard(req_id)
 
         elif method == "Network.webSocketCreated":
-            req_id = params.get("requestId")
-            url = params.get("url")
+            req_id = str(params.get("requestId", ""))
+            url = str(params.get("url", ""))
             # Limit ws_connections map to prevent memory leak
             if len(self.ws_connections) > 200:
                 self.ws_connections.clear()
@@ -165,7 +167,7 @@ class NetworkMonitor:
             })
 
         elif method == "Network.webSocketFrameSent":
-            req_id = params.get("requestId")
+            req_id = str(params.get("requestId", ""))
             resp = params.get("response", {})
             data = resp.get("payloadData", "")
             self.ws_frames.append({
@@ -177,7 +179,7 @@ class NetworkMonitor:
             })
 
         elif method == "Network.webSocketFrameReceived":
-            req_id = params.get("requestId")
+            req_id = str(params.get("requestId", ""))
             resp = params.get("response", {})
             data = resp.get("payloadData", "")
             self.ws_frames.append({
@@ -189,7 +191,7 @@ class NetworkMonitor:
             })
 
         elif method == "Network.webSocketClosed":
-            req_id = params.get("requestId")
+            req_id = str(params.get("requestId", ""))
             url = self.ws_connections.pop(req_id, "unknown")
             self.ws_frames.append({
                 "timestamp": t,
@@ -199,7 +201,7 @@ class NetworkMonitor:
                 "data": f"WebSocket closed: {url}"
             })
 
-    def list_requests(self, filter_type: Optional[str] = None, url_pattern: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_requests(self, filter_type: str | None = None, url_pattern: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         results = []
         for req_id in reversed(self.ordered_requests):
             req = self.requests.get(req_id)
@@ -224,10 +226,10 @@ class NetworkMonitor:
                 break
         return results
 
-    def get_request_details(self, req_id: str) -> Optional[Dict[str, Any]]:
+    def get_request_details(self, req_id: str) -> dict[str, Any] | None:
         return self.requests.get(req_id)
 
-    def list_ws_frames(self, direction: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_ws_frames(self, direction: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         results = []
         for frame in reversed(self.ws_frames):
             if direction and frame.get("direction") != direction:
@@ -237,7 +239,7 @@ class NetworkMonitor:
                 break
         return results
 
-    def export_to_dict(self) -> Dict[str, Any]:
+    def export_to_dict(self) -> dict[str, Any]:
         return {
             "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "total_requests": len(self.requests),
@@ -246,10 +248,10 @@ class NetworkMonitor:
             "websocket_frames": list(self.ws_frames)
         }
 
-    def export_to_file(self, file_path: str):
+    async def export_to_file(self, file_path: str):
         data = self.export_to_dict()
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(data, ensure_ascii=False, indent=2))
 
     def clear(self):
         self.requests.clear()

@@ -1,15 +1,17 @@
+import argparse
+import asyncio
+import base64
+import json
+import logging
 import os
 import sys
-import json
-import asyncio
-import logging
-import base64
-import argparse
-from typing import Dict, Any, Optional, Callable, NamedTuple, Union, List
+import aiofiles
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
+from .batch import BatchRunner
 from .cdp import CDPClient
 from .snapshot import PageSnapshot
-from .batch import BatchRunner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -865,14 +867,14 @@ TOOLS = [
 
 class ToolHandlerInfo(NamedTuple):
     name: str
-    func: Callable[["MCPServer", Dict[str, Any]], Any]
+    func: Callable[["MCPServer", dict[str, Any]], Any]
     requires_connection: bool = True
 
-TOOL_REGISTRY: Dict[str, ToolHandlerInfo] = {}
+TOOL_REGISTRY: dict[str, ToolHandlerInfo] = {}
 
 def tool(name: str, requires_connection: bool = True):
     """Decorator to register a tool handler function in TOOL_REGISTRY."""
-    def decorator(func: Callable[["MCPServer", Dict[str, Any]], Any]):
+    def decorator(func: Callable[["MCPServer", dict[str, Any]], Any]):
         TOOL_REGISTRY[name] = ToolHandlerInfo(name=name, func=func, requires_connection=requires_connection)
         return func
     return decorator
@@ -881,7 +883,7 @@ def tool(name: str, requires_connection: bool = True):
 # --- Tab Management & Navigation ---
 
 @tool("browser_list_tabs", requires_connection=False)
-async def _handle_list_tabs(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_list_tabs(server: "MCPServer", args: dict[str, Any]) -> str:
     targets = await server.cdp.list_targets_async()
     pages = [
         {"id": t.get("id"), "title": t.get("title"), "url": t.get("url")}
@@ -890,7 +892,7 @@ async def _handle_list_tabs(server: "MCPServer", args: Dict[str, Any]) -> str:
     return json.dumps(pages, ensure_ascii=False, indent=2)
 
 @tool("browser_select_tab", requires_connection=False)
-async def _handle_select_tab(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_select_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     query = args.get("query")
     await server.cdp.connect(query)
     target = await server.cdp.find_target_async(query)
@@ -899,48 +901,48 @@ async def _handle_select_tab(server: "MCPServer", args: Dict[str, Any]) -> str:
     return f"Connected to tab: {title} ({url})"
 
 @tool("browser_new_tab", requires_connection=False)
-async def _handle_new_tab(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_new_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     url = args.get("url", "about:blank")
     res = await server.cdp.new_tab(url)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_close_tab", requires_connection=False)
-async def _handle_close_tab(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_close_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     target_id = args.get("target_id")
     closed = await server.cdp.close_tab(target_id)
     return "Tab closed successfully" if closed else "Failed to close tab"
 
 @tool("browser_reload")
-async def _handle_reload(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_reload(server: "MCPServer", args: dict[str, Any]) -> str:
     ignore_cache = args.get("ignore_cache", False)
     await server.cdp.reload(ignore_cache=ignore_cache)
     return "Page reloaded successfully"
 
 @tool("browser_navigate")
-async def _handle_navigate(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_navigate(server: "MCPServer", args: dict[str, Any]) -> str:
     url = args.get("url", "")
     await server.cdp.navigate(url)
     return f"Navigated to {url}"
 
 @tool("browser_back")
-async def _handle_back(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_back(server: "MCPServer", args: dict[str, Any]) -> str:
     delta = args.get("delta", 1)
     res = await server.cdp.go_back(delta=delta)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_forward")
-async def _handle_forward(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_forward(server: "MCPServer", args: dict[str, Any]) -> str:
     delta = args.get("delta", 1)
     res = await server.cdp.go_forward(delta=delta)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_history")
-async def _handle_history(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_history(server: "MCPServer", args: dict[str, Any]) -> str:
     hist = await server.cdp.get_navigation_history()
     return json.dumps(hist, ensure_ascii=False, indent=2)
 
 @tool("browser_cleanup_tabs")
-async def _handle_cleanup_tabs(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_cleanup_tabs(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.cleanup_tabs_async(
         keep_current=args.get("keep_current", True),
         close_blank=args.get("close_blank", True),
@@ -949,12 +951,12 @@ async def _handle_cleanup_tabs(server: "MCPServer", args: Dict[str, Any]) -> str
     return json.dumps(res, indent=2)
 
 @tool("browser_new_isolated_tab")
-async def _handle_new_isolated_tab(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_new_isolated_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.new_isolated_tab(url=args.get("url", "about:blank"))
     return json.dumps(res, indent=2)
 
 @tool("browser_open_system_page")
-async def _handle_open_system_page(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_open_system_page(server: "MCPServer", args: dict[str, Any]) -> str:
     page = args.get("page", "settings")
     res = await server.cdp.open_system_page(page)
     return json.dumps(res, ensure_ascii=False, indent=2)
@@ -963,25 +965,25 @@ async def _handle_open_system_page(server: "MCPServer", args: Dict[str, Any]) ->
 # --- DOM Snapshots, Inspection & Layout ---
 
 @tool("browser_snapshot")
-async def _handle_snapshot(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_snapshot(server: "MCPServer", args: dict[str, Any]) -> str:
     selector = args.get("selector")
     in_viewport = args.get("in_viewport", False)
     max_elements = args.get("max_elements")
     return await server.snapshot.capture_formatted(selector=selector, in_viewport=in_viewport, max_elements=max_elements)
 
 @tool("browser_get_html")
-async def _handle_get_html(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_get_html(server: "MCPServer", args: dict[str, Any]) -> str:
     path = args.get("save_path")
     html = await server.cdp.get_html()
     if path:
         safe_path = server.validate_path(path, for_write=True)
-        with open(safe_path, "w", encoding="utf-8") as f:
-            f.write(html)
+        async with aiofiles.open(safe_path, "w", encoding="utf-8") as f:
+            await f.write(html)
         return f"HTML saved to {safe_path} ({len(html)} chars)"
     return html[:20000]
 
 @tool("browser_get_css_styles")
-async def _handle_get_css_styles(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_get_css_styles(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.get_css_styles(
         selector=args.get("selector"),
         ref=args.get("ref")
@@ -989,7 +991,7 @@ async def _handle_get_css_styles(server: "MCPServer", args: Dict[str, Any]) -> s
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_find_in_page")
-async def _handle_find_in_page(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_find_in_page(server: "MCPServer", args: dict[str, Any]) -> str:
     query = args.get("query", "")
     scroll = args.get("scroll_to_first", True)
     res = await server.cdp.find_in_page(query=query, scroll_to_first=scroll)
@@ -999,19 +1001,19 @@ async def _handle_find_in_page(server: "MCPServer", args: Dict[str, Any]) -> str
 # --- Batch Execution & User Interaction ---
 
 @tool("browser_batch")
-async def _handle_batch(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_batch(server: "MCPServer", args: dict[str, Any]) -> str:
     steps = args.get("steps", [])
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_eval")
-async def _handle_eval(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_eval(server: "MCPServer", args: dict[str, Any]) -> str:
     script = args.get("script", "")
     val = await server.cdp.evaluate(script)
     return json.dumps(val, ensure_ascii=False, indent=2)
 
 @tool("browser_click")
-async def _handle_click(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_click(server: "MCPServer", args: dict[str, Any]) -> str:
     ref = args.get("ref")
     selector = args.get("selector")
     steps = [{"action": "click", "ref": ref, "selector": selector}]
@@ -1019,7 +1021,7 @@ async def _handle_click(server: "MCPServer", args: Dict[str, Any]) -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @tool("browser_fill")
-async def _handle_fill(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_fill(server: "MCPServer", args: dict[str, Any]) -> str:
     ref = args.get("ref")
     selector = args.get("selector")
     text = args.get("text", "")
@@ -1029,14 +1031,14 @@ async def _handle_fill(server: "MCPServer", args: Dict[str, Any]) -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @tool("browser_press_key")
-async def _handle_press_key(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_press_key(server: "MCPServer", args: dict[str, Any]) -> str:
     key = args.get("key", "Enter")
     steps = [{"action": "press_key", "key": key}]
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False)
 
 @tool("browser_scroll")
-async def _handle_scroll(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_scroll(server: "MCPServer", args: dict[str, Any]) -> str:
     delta_y = args.get("delta_y", 400)
     delta_x = args.get("delta_x", 0)
     ref = args.get("ref")
@@ -1046,14 +1048,14 @@ async def _handle_scroll(server: "MCPServer", args: Dict[str, Any]) -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @tool("browser_mouse")
-async def _handle_mouse(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_mouse(server: "MCPServer", args: dict[str, Any]) -> str:
     action = args.get("action")
     step = {"action": action, **args}
     res = await server.batch.execute([step])
     return json.dumps(res, ensure_ascii=False)
 
 @tool("browser_upload_file")
-async def _handle_upload_file(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_upload_file(server: "MCPServer", args: dict[str, Any]) -> str:
     selector = args.get("selector", "")
     files = args.get("files", [])
     safe_files = [server.validate_path(f, must_exist=True) for f in files]
@@ -1064,7 +1066,7 @@ async def _handle_upload_file(server: "MCPServer", args: Dict[str, Any]) -> str:
 # --- Media, Screenshots & Viewport ---
 
 @tool("browser_screenshot")
-async def _handle_screenshot(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_screenshot(server: "MCPServer", args: dict[str, Any]) -> str:
     path = args.get("save_path")
     if path:
         path = server.validate_path(path, for_write=True)
@@ -1075,16 +1077,16 @@ async def _handle_screenshot(server: "MCPServer", args: Dict[str, Any]) -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @tool("browser_print_to_pdf")
-async def _handle_print_to_pdf(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_print_to_pdf(server: "MCPServer", args: dict[str, Any]) -> str:
     path = args.get("save_path", "page.pdf")
     safe_path = server.validate_path(path, for_write=True)
     b64 = await server.cdp.print_to_pdf(landscape=args.get("landscape", False))
-    with open(safe_path, "wb") as f:
-        f.write(base64.b64decode(b64))
+    async with aiofiles.open(safe_path, "wb") as f:
+        await f.write(base64.b64decode(b64))
     return f"PDF saved successfully to {safe_path}"
 
 @tool("browser_set_viewport")
-async def _handle_set_viewport(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_viewport(server: "MCPServer", args: dict[str, Any]) -> str:
     w = args.get("width", 1280)
     h = args.get("height", 800)
     mob = args.get("mobile", False)
@@ -1093,7 +1095,7 @@ async def _handle_set_viewport(server: "MCPServer", args: Dict[str, Any]) -> str
     return f"Viewport set to {w}x{h} (mobile={mob})"
 
 @tool("browser_window")
-async def _handle_window(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_window(server: "MCPServer", args: dict[str, Any]) -> str:
     action = args.get("action", "get")
     state = args.get("state")
     width = args.get("width")
@@ -1109,25 +1111,25 @@ async def _handle_window(server: "MCPServer", args: Dict[str, Any]) -> str:
         return json.dumps(bounds, ensure_ascii=False, indent=2)
 
 @tool("browser_set_media_theme")
-async def _handle_set_media_theme(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_media_theme(server: "MCPServer", args: dict[str, Any]) -> str:
     theme = args.get("theme", "dark")
     res = await server.cdp.set_media_theme(theme=theme)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_set_page_zoom")
-async def _handle_set_page_zoom(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_page_zoom(server: "MCPServer", args: dict[str, Any]) -> str:
     scale = args.get("scale", 1.0)
     res = await server.cdp.set_page_zoom(scale=scale)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_mute_tab")
-async def _handle_mute_tab(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_mute_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     muted = args.get("muted", True)
     res = await server.cdp.set_audio_muted(muted=muted)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_handle_dialog")
-async def _handle_dialog(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_dialog(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.handle_dialog(
         action=args.get("action", "accept"),
         prompt_text=args.get("prompt_text")
@@ -1138,7 +1140,7 @@ async def _handle_dialog(server: "MCPServer", args: Dict[str, Any]) -> str:
 # --- Network & DevTools Monitoring ---
 
 @tool("browser_network_requests")
-async def _handle_network_requests(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_network_requests(server: "MCPServer", args: dict[str, Any]) -> str:
     filter_type = args.get("filter_type")
     url_pattern = args.get("url_pattern")
     limit = args.get("limit", 30)
@@ -1146,7 +1148,7 @@ async def _handle_network_requests(server: "MCPServer", args: Dict[str, Any]) ->
     return json.dumps(reqs, ensure_ascii=False, indent=2)
 
 @tool("browser_network_get_response")
-async def _handle_network_get_response(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_network_get_response(server: "MCPServer", args: dict[str, Any]) -> str:
     req_id = args.get("request_id", "")
     details = server.cdp.network.get_request_details(req_id)
     body_res = await server.cdp.get_response_body(req_id)
@@ -1157,41 +1159,41 @@ async def _handle_network_get_response(server: "MCPServer", args: Dict[str, Any]
     return json.dumps(combined, ensure_ascii=False, indent=2)
 
 @tool("browser_websocket_messages")
-async def _handle_websocket_messages(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_websocket_messages(server: "MCPServer", args: dict[str, Any]) -> str:
     direction = args.get("direction")
     limit = args.get("limit", 40)
     frames = server.cdp.network.list_ws_frames(direction=direction, limit=limit)
     return json.dumps(frames, ensure_ascii=False, indent=2)
 
 @tool("browser_console_logs")
-async def _handle_console_logs(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_console_logs(server: "MCPServer", args: dict[str, Any]) -> str:
     log_type = args.get("log_type")
     limit = args.get("limit", 30)
     logs = server.cdp.console.list_logs(log_type=log_type, limit=limit)
     return json.dumps(logs, ensure_ascii=False, indent=2)
 
 @tool("browser_export_traffic")
-async def _handle_export_traffic(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_export_traffic(server: "MCPServer", args: dict[str, Any]) -> str:
     path = args.get("file_path", "traffic_dump.json")
     safe_path = server.validate_path(path, for_write=True)
-    server.cdp.network.export_to_file(safe_path)
+    await server.cdp.network.export_to_file(safe_path)
     return f"Traffic dump exported successfully to {safe_path}"
 
 @tool("browser_wait_for_network_idle")
-async def _handle_wait_for_network_idle(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_wait_for_network_idle(server: "MCPServer", args: dict[str, Any]) -> str:
     idle_time = args.get("idle_time", 0.5)
     timeout = args.get("timeout", 10.0)
     ok = await server.cdp.wait_for_network_idle(idle_time=idle_time, timeout=timeout)
     return json.dumps({"idle": ok, "idle_time": idle_time, "timeout": timeout}, indent=2)
 
 @tool("browser_block_urls")
-async def _handle_block_urls(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_block_urls(server: "MCPServer", args: dict[str, Any]) -> str:
     patterns = args.get("patterns", [])
     await server.cdp.block_urls(patterns)
     return f"Blocked {len(patterns)} URL patterns"
 
 @tool("browser_block_resources")
-async def _handle_block_resources(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_block_resources(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.block_resources(
         blocked_urls=args.get("blocked_urls"),
         block_images=args.get("block_images", False),
@@ -1202,19 +1204,19 @@ async def _handle_block_resources(server: "MCPServer", args: Dict[str, Any]) -> 
     return json.dumps(res, indent=2)
 
 @tool("browser_set_headers")
-async def _handle_set_headers(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_headers(server: "MCPServer", args: dict[str, Any]) -> str:
     headers = args.get("headers", {})
     await server.cdp.set_extra_headers(headers)
     return f"Injected {len(headers)} custom headers"
 
 @tool("browser_set_user_agent")
-async def _handle_set_user_agent(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_user_agent(server: "MCPServer", args: dict[str, Any]) -> str:
     ua = args.get("user_agent", "")
     await server.cdp.set_user_agent(ua)
     return f"User-Agent updated to {ua!r}"
 
 @tool("browser_network_throttling")
-async def _handle_network_throttling(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_network_throttling(server: "MCPServer", args: dict[str, Any]) -> str:
     prof = args.get("profile", "none")
     res = await server.cdp.set_network_throttling(
         profile=prof,
@@ -1226,7 +1228,7 @@ async def _handle_network_throttling(server: "MCPServer", args: Dict[str, Any]) 
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_set_ignore_certificate_errors")
-async def _handle_set_ignore_certificate_errors(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_ignore_certificate_errors(server: "MCPServer", args: dict[str, Any]) -> str:
     ignore = args.get("ignore", True)
     res = await server.cdp.set_ignore_certificate_errors(ignore=ignore)
     return json.dumps(res, ensure_ascii=False, indent=2)
@@ -1235,12 +1237,12 @@ async def _handle_set_ignore_certificate_errors(server: "MCPServer", args: Dict[
 # --- Storage, Cookies & Permissions ---
 
 @tool("browser_get_cookies")
-async def _handle_get_cookies(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_get_cookies(server: "MCPServer", args: dict[str, Any]) -> str:
     cookies = await server.cdp.get_cookies()
     return json.dumps(cookies, ensure_ascii=False, indent=2)
 
 @tool("browser_set_cookie")
-async def _handle_set_cookie(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_cookie(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.set_cookie(
         name=args["name"],
         value=args["value"],
@@ -1250,7 +1252,7 @@ async def _handle_set_cookie(server: "MCPServer", args: Dict[str, Any]) -> str:
     return "Cookie set successfully" if res else "Failed to set cookie"
 
 @tool("browser_clear_storage")
-async def _handle_clear_storage(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_clear_storage(server: "MCPServer", args: dict[str, Any]) -> str:
     if args.get("clear_cache", True):
         await server.cdp.clear_cache()
     if args.get("clear_cookies", True):
@@ -1258,12 +1260,12 @@ async def _handle_clear_storage(server: "MCPServer", args: Dict[str, Any]) -> st
     return "Storage/cache cleared successfully"
 
 @tool("browser_get_storage")
-async def _handle_get_storage(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_get_storage(server: "MCPServer", args: dict[str, Any]) -> str:
     data = await server.cdp.get_storage()
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 @tool("browser_get_indexeddb")
-async def _handle_get_indexeddb(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_get_indexeddb(server: "MCPServer", args: dict[str, Any]) -> str:
     idb = await server.cdp.get_indexeddb_data()
     return json.dumps(idb, ensure_ascii=False, indent=2)
 
@@ -1271,7 +1273,7 @@ async def _handle_get_indexeddb(server: "MCPServer", args: Dict[str, Any]) -> st
 # --- Emulation, Environment & Extensions ---
 
 @tool("browser_emulate_environment")
-async def _handle_emulate_environment(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_emulate_environment(server: "MCPServer", args: dict[str, Any]) -> str:
     if "latitude" in args and "longitude" in args:
         await server.cdp.set_geolocation(args["latitude"], args["longitude"])
     if "timezone_id" in args:
@@ -1279,13 +1281,13 @@ async def _handle_emulate_environment(server: "MCPServer", args: Dict[str, Any])
     return "Environment emulated successfully"
 
 @tool("browser_stealth_mode")
-async def _handle_stealth_mode(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_stealth_mode(server: "MCPServer", args: dict[str, Any]) -> str:
     enabled = args.get("enabled", True)
     res = await server.cdp.set_stealth_mode(enabled=enabled)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_set_geolocation")
-async def _handle_set_geolocation(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_geolocation(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.set_geolocation(
         latitude=args.get("latitude", 0.0),
         longitude=args.get("longitude", 0.0),
@@ -1294,47 +1296,47 @@ async def _handle_set_geolocation(server: "MCPServer", args: Dict[str, Any]) -> 
     return json.dumps(res, indent=2)
 
 @tool("browser_set_timezone")
-async def _handle_set_timezone(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_timezone(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.set_timezone(timezone_id=args.get("timezone", "UTC"))
     return json.dumps(res, indent=2)
 
 @tool("browser_set_cpu_throttling")
-async def _handle_set_cpu_throttling(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_set_cpu_throttling(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.set_cpu_throttling(rate=args.get("rate", 1.0))
     return json.dumps(res, indent=2)
 
 @tool("browser_add_preload_script")
-async def _handle_add_preload_script(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_add_preload_script(server: "MCPServer", args: dict[str, Any]) -> str:
     source = args.get("source", "")
     ident = await server.cdp.add_preload_script(source)
     return f"Preload script registered (identifier={ident})"
 
 @tool("browser_remove_preload_script")
-async def _handle_remove_preload_script(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_remove_preload_script(server: "MCPServer", args: dict[str, Any]) -> str:
     ident = args.get("identifier", "")
     await server.cdp.remove_preload_script(ident)
     return f"Preload script removed (identifier={ident})"
 
 @tool("browser_list_extensions")
-async def _handle_list_extensions(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_list_extensions(server: "MCPServer", args: dict[str, Any]) -> str:
     exts = await server.cdp.list_extensions()
     return json.dumps(exts, ensure_ascii=False, indent=2)
 
 @tool("browser_extension_action")
-async def _handle_extension_action(server: "MCPServer", args: Dict[str, Any]) -> str:
-    ext_id = args.get("extension_id")
-    act = args.get("action")
+async def _handle_extension_action(server: "MCPServer", args: dict[str, Any]) -> str:
+    ext_id = str(args.get("extension_id", ""))
+    act = str(args.get("action", ""))
     res = await server.cdp.extension_action(ext_id, act)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 @tool("browser_system_info")
-async def _handle_system_info(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_system_info(server: "MCPServer", args: dict[str, Any]) -> str:
     ver = await server.cdp.get_browser_version_async()
     metrics = {}
     try:
         metrics = await server.cdp.get_performance_metrics()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(e)
     targets = await server.cdp.list_targets_async()
     info = {
         "browser_version": ver,
@@ -1344,20 +1346,20 @@ async def _handle_system_info(server: "MCPServer", args: Dict[str, Any]) -> str:
     return json.dumps(info, ensure_ascii=False, indent=2)
 
 @tool("browser_performance_metrics")
-async def _handle_performance_metrics(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_performance_metrics(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.get_performance_metrics()
     return json.dumps(res, indent=2)
 
 @tool("browser_set_download_path")
-async def _handle_set_download_path(server: "MCPServer", args: Dict[str, Any]) -> str:
-    dl_path = args.get("download_path")
+async def _handle_set_download_path(server: "MCPServer", args: dict[str, Any]) -> str:
+    dl_path = str(args.get("download_path", ""))
     safe_dl_path = server.validate_path(dl_path, for_write=True)
     behavior = args.get("behavior", "allow")
     await server.cdp.set_download_path(safe_dl_path, behavior=behavior)
     return f"Download path configured: {safe_dl_path} (behavior={behavior})"
 
 @tool("browser_grant_permissions")
-async def _handle_grant_permissions(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_grant_permissions(server: "MCPServer", args: dict[str, Any]) -> str:
     if args.get("reset"):
         await server.cdp.reset_permissions()
         return "All browser permissions reset"
@@ -1367,7 +1369,7 @@ async def _handle_grant_permissions(server: "MCPServer", args: Dict[str, Any]) -
     return f"Granted permissions: {perms}"
 
 @tool("browser_clipboard")
-async def _handle_clipboard(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_clipboard(server: "MCPServer", args: dict[str, Any]) -> str:
     action = args.get("action", "read")
     if action == "write":
         text = args.get("text", "")
@@ -1378,7 +1380,7 @@ async def _handle_clipboard(server: "MCPServer", args: Dict[str, Any]) -> str:
         return clip_text
 
 @tool("browser_cdp_send")
-async def _handle_cdp_send(server: "MCPServer", args: Dict[str, Any]) -> str:
+async def _handle_cdp_send(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.send_cdp(
         method=args["method"],
         params=args.get("params"),
@@ -1395,7 +1397,7 @@ class MCPServer:
         self,
         host: str = "127.0.0.1",
         port: int = 9222,
-        allowed_dir: Optional[str] = None
+        allowed_dir: str | None = None
     ):
         self.host = host
         self.port = port
@@ -1430,11 +1432,11 @@ class MCPServer:
 
         return resolved
 
-    async def ensure_connected(self, query: Optional[str] = None):
+    async def ensure_connected(self, query: str | None = None):
         if not self.cdp.is_connected:
             await self.cdp.connect(query)
 
-    async def handle_call(self, name: str, args: Dict[str, Any]) -> str:
+    async def handle_call(self, name: str, args: dict[str, Any]) -> str:
         handler = TOOL_REGISTRY.get(name)
         if not handler:
             raise ValueError(f"Unknown tool: {name}")
@@ -1444,7 +1446,7 @@ class MCPServer:
 
         return await handler.func(self, args)
 
-    def _send_response(self, resp: Dict[str, Any]):
+    def _send_response(self, resp: dict[str, Any]):
         body = json.dumps(resp, ensure_ascii=False)
         if self._client_used_headers:
             body_bytes = body.encode("utf-8")
@@ -1455,7 +1457,7 @@ class MCPServer:
         sys.stdout.flush()
 
     def _send_error(self, msg_id: Any, code: int, message: str, data: Any = None):
-        err_obj: Dict[str, Any] = {"code": code, "message": message}
+        err_obj: dict[str, Any] = {"code": code, "message": message}
         if data is not None:
             err_obj["data"] = data
         self._send_response({
@@ -1464,7 +1466,7 @@ class MCPServer:
             "error": err_obj
         })
 
-    async def _read_message(self, reader: asyncio.StreamReader) -> Optional[Dict[str, Any]]:
+    async def _read_message(self, reader: asyncio.StreamReader) -> dict[str, Any] | None:
         """Read a single JSON-RPC message from reader, supporting both NDJSON and Content-Length headers."""
         while True:
             line = await reader.readline()

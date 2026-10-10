@@ -1,7 +1,9 @@
-import unittest
 import asyncio
-from fast_browser.snapshot import PageSnapshot
+import unittest
+
 from fast_browser.batch import BatchRunner
+from fast_browser.snapshot import PageSnapshot
+
 try:
     from .base import BaseBrowserTest
 except ImportError:

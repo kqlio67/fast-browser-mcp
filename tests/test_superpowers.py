@@ -1,6 +1,8 @@
-import unittest
 import asyncio
+import unittest
+
 from fast_browser.batch import BatchRunner
+
 try:
     from .base import BaseBrowserTest
 except ImportError:

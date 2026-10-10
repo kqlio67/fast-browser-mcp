@@ -1,11 +1,13 @@
-import unittest
 import asyncio
 import time
+import unittest
 from unittest.mock import AsyncMock
-from fast_browser.network import NetworkMonitor, InFlightTracker
+
 from fast_browser.batch import BatchRunner
 from fast_browser.cdp import CDPClient
+from fast_browser.network import InFlightTracker, NetworkMonitor
 from fast_browser.snapshot import PageSnapshot
+
 try:
     from .base import BaseBrowserTest
 except ImportError:

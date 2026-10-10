@@ -1,13 +1,13 @@
-import sys
-import json
-import asyncio
 import argparse
+import asyncio
 import base64
-from typing import Optional
+import json
+import aiofiles
 
+from .batch import BatchRunner
 from .cdp import CDPClient
 from .snapshot import PageSnapshot
-from .batch import BatchRunner
+
 
 async def run_cli():
     parser = argparse.ArgumentParser(description="Fast Browser CDP CLI")
@@ -367,16 +367,16 @@ async def run_cli():
     elif args.command == "html":
         html = await cdp.get_html()
         if args.out:
-            with open(args.out, "w", encoding="utf-8") as f:
-                f.write(html)
+            async with aiofiles.open(args.out, "w", encoding="utf-8") as f:
+                await f.write(html)
             print(f"HTML saved to {args.out} ({len(html)} chars)")
         else:
             print(html[:5000])
 
     elif args.command == "pdf":
         b64 = await cdp.print_to_pdf(landscape=args.landscape)
-        with open(args.out, "wb") as f:
-            f.write(base64.b64decode(b64))
+        async with aiofiles.open(args.out, "wb") as f:
+            await f.write(base64.b64decode(b64))
         print(f"PDF saved to {args.out}")
 
     elif args.command == "eval":
@@ -391,8 +391,8 @@ async def run_cli():
         if steps_raw.startswith("[") or steps_raw.startswith("{"):
             steps = json.loads(steps_raw)
         else:
-            with open(steps_raw, "r", encoding="utf-8") as f:
-                steps = json.load(f)
+            async with aiofiles.open(steps_raw, "r", encoding="utf-8") as f:
+                steps = json.loads(await f.read())
         if isinstance(steps, dict) and "steps" in steps:
             steps = steps["steps"]
         
@@ -440,7 +440,7 @@ async def run_cli():
         print(json.dumps(data, ensure_ascii=False, indent=2))
 
     elif args.command == "export-traffic":
-        cdp.network.export_to_file(args.output)
+        await cdp.network.export_to_file(args.output)
         print(f"Exported traffic to {args.output}")
 
     elif args.command == "viewport":

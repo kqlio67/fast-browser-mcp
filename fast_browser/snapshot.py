@@ -1,6 +1,10 @@
 import json
-from typing import Dict, Any, List, Optional
+import logging
+from typing import Any
+
 from .cdp import CDPClient
+
+logger = logging.getLogger("fast_browser.snapshot")
 
 SNAPSHOT_JS = r"""(() => {
     window.__fb_refs = window.__fb_refs || {};
@@ -249,9 +253,9 @@ class PageSnapshot:
 
     def build_snapshot_js(
         self,
-        selector: Optional[str] = None,
+        selector: str | None = None,
         in_viewport: bool = False,
-        max_elements: Optional[int] = None,
+        max_elements: int | None = None,
         start_id: int = 1,
         clear_refs: bool = True,
         default_frame_prefix: str = ""
@@ -265,7 +269,7 @@ class PageSnapshot:
         js = js.replace("%DEFAULT_FRAME_PREFIX%", json.dumps(default_frame_prefix))
         return js
 
-    async def capture(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> Dict[str, Any]:
+    async def capture(self, selector: str | None = None, in_viewport: bool = False, max_elements: int | None = None) -> dict[str, Any]:
         url = await self.cdp.evaluate("window.location.href")
         if url and ("chrome://settings" in url or "chrome://extensions" in url):
             ready_js = """(async () => {
@@ -282,8 +286,8 @@ class PageSnapshot:
             })()"""
             try:
                 await self.cdp.evaluate(ready_js, timeout=3.0)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(e)
 
         self.cdp.ref_session_map.clear()
         js = self.build_snapshot_js(selector=selector, in_viewport=in_viewport, max_elements=max_elements, start_id=1, clear_refs=True, default_frame_prefix="")
@@ -317,7 +321,8 @@ class PageSnapshot:
                 try:
                     parsed = urllib.parse.urlparse(frame_url)
                     host = parsed.netloc or parsed.path
-                except Exception:
+                except Exception as e:
+                    logger.debug(e)
                     host = ""
                 frame_name = host or frame_title or "frame"
                 frame_prefix = f"(iframe:{frame_name}) "
@@ -348,8 +353,8 @@ class PageSnapshot:
                         if child_data.get("truncated"):
                             data["truncated"] = True
                         next_id = child_data.get("next_id", next_id + len(child_interactive))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(e)
 
         if max_elements and max_elements > 0 and len(data["interactive"]) > max_elements:
             data["interactive"] = data["interactive"][:max_elements]
@@ -358,7 +363,7 @@ class PageSnapshot:
 
         return data
 
-    async def capture_formatted(self, selector: Optional[str] = None, in_viewport: bool = False, max_elements: Optional[int] = None) -> str:
+    async def capture_formatted(self, selector: str | None = None, in_viewport: bool = False, max_elements: int | None = None) -> str:
         data = await self.capture(selector=selector, in_viewport=in_viewport, max_elements=max_elements)
         scope_info = f" [Scope: {data.get('root')}]" if data.get('root') != "document" else ""
         vp_info = " [Viewport only]" if data.get('in_viewport') else ""
