@@ -13,11 +13,12 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
+
 class TestArchitecture(BaseBrowserTest):
     def test_async_non_blocking_cdp_methods(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
-            
+
             # test list_targets_async
             targets = await self.cdp.list_targets_async()
             self.assertIsInstance(targets, list)
@@ -61,10 +62,12 @@ class TestArchitecture(BaseBrowserTest):
             self.assertIn("requires 'ref' or 'selector'", res3["error"])
 
             # Test valid execution passes validation
-            res4 = await runner.execute([
-                {"action": "eval", "expression": "10 * 10"},
-                {"action": "wait", "ms": 10}
-            ])
+            res4 = await runner.execute(
+                [
+                    {"action": "eval", "expression": "10 * 10"},
+                    {"action": "wait", "ms": 10},
+                ]
+            )
             self.assertTrue(res4["success"])
             self.assertEqual(res4["results"][0]["result"], 100)
 
@@ -77,21 +80,24 @@ class TestArchitecture(BaseBrowserTest):
 
         # 1. Pump 30 requests into monitor with max_requests=10
         for i in range(30):
-            monitor.handle_event("Network.requestWillBeSent", {
-                "requestId": f"req_{i}",
-                "request": {
-                    "url": f"https://example.com/item/{i}",
-                    "method": "POST",
-                    "postData": "A" * 20000
+            monitor.handle_event(
+                "Network.requestWillBeSent",
+                {
+                    "requestId": f"req_{i}",
+                    "request": {
+                        "url": f"https://example.com/item/{i}",
+                        "method": "POST",
+                        "postData": "A" * 20000,
+                    },
+                    "type": "XHR",
                 },
-                "type": "XHR"
-            })
+            )
 
         # Check that requests dict is strictly bounded to max_requests
         self.assertEqual(len(monitor.ordered_requests), 10)
         self.assertEqual(len(monitor.requests), 10)
         self.assertNotIn("req_0", monitor.requests)  # Evicted
-        self.assertIn("req_29", monitor.requests)    # Kept
+        self.assertIn("req_29", monitor.requests)  # Kept
 
         # Check that postData was safely truncated
         last_req = monitor.requests["req_29"]
@@ -99,15 +105,13 @@ class TestArchitecture(BaseBrowserTest):
         self.assertLessEqual(len(last_req["postData"]), 10300)
 
         # 2. Test WebSocket closed event & cleanup
-        monitor.handle_event("Network.webSocketCreated", {
-            "requestId": "ws_1",
-            "url": "wss://example.com/socket"
-        })
+        monitor.handle_event(
+            "Network.webSocketCreated",
+            {"requestId": "ws_1", "url": "wss://example.com/socket"},
+        )
         self.assertIn("ws_1", monitor.ws_connections)
 
-        monitor.handle_event("Network.webSocketClosed", {
-            "requestId": "ws_1"
-        })
+        monitor.handle_event("Network.webSocketClosed", {"requestId": "ws_1"})
         self.assertNotIn("ws_1", monitor.ws_connections)
         self.assertEqual(monitor.ws_frames[-1]["type"], "disconnect")
 
@@ -125,23 +129,26 @@ class TestArchitecture(BaseBrowserTest):
             runner = BatchRunner(self.cdp)
 
             # 1. Test block_urls accepts 'patterns'
-            res1 = await runner.execute([
-                {"action": "block_urls", "patterns": ["*.analytics.com", "*.tracker.org"]}
-            ])
+            res1 = await runner.execute(
+                [
+                    {
+                        "action": "block_urls",
+                        "patterns": ["*.analytics.com", "*.tracker.org"],
+                    }
+                ]
+            )
             self.assertTrue(res1["success"], res1.get("error"))
             self.assertIn("Blocked 2 URL patterns", res1["results"][0]["detail"])
 
             # 2. Test block_urls also accepts 'urls'
-            res2 = await runner.execute([
-                {"action": "block_urls", "urls": ["*.ads.com"]}
-            ])
+            res2 = await runner.execute(
+                [{"action": "block_urls", "urls": ["*.ads.com"]}]
+            )
             self.assertTrue(res2["success"], res2.get("error"))
             self.assertIn("Blocked 1 URL patterns", res2["results"][0]["detail"])
 
             # 3. Test system_info works asynchronously and returns browser_version
-            res3 = await runner.execute([
-                {"action": "system_info"}
-            ])
+            res3 = await runner.execute([{"action": "system_info"}])
             self.assertTrue(res3["success"], res3.get("error"))
             self.assertIn("browser_version", res3["results"][0])
             self.assertIn("Browser", res3["results"][0]["browser_version"])
@@ -154,26 +161,35 @@ class TestArchitecture(BaseBrowserTest):
         monitor = NetworkMonitor(max_requests=5)
 
         # 1. Streaming requests (EventSource, WebSocket, Ping) should NOT be added to in_flight_requests
-        monitor.handle_event("Network.requestWillBeSent", {
-            "requestId": "sse_1",
-            "request": {"url": "https://example.com/events", "method": "GET"},
-            "type": "EventSource"
-        })
+        monitor.handle_event(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "sse_1",
+                "request": {"url": "https://example.com/events", "method": "GET"},
+                "type": "EventSource",
+            },
+        )
         self.assertNotIn("sse_1", monitor.in_flight_requests)
 
-        monitor.handle_event("Network.requestWillBeSent", {
-            "requestId": "ws_req",
-            "request": {"url": "wss://example.com/stream", "method": "GET"},
-            "type": "WebSocket"
-        })
+        monitor.handle_event(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "ws_req",
+                "request": {"url": "wss://example.com/stream", "method": "GET"},
+                "type": "WebSocket",
+            },
+        )
         self.assertNotIn("ws_req", monitor.in_flight_requests)
 
         # Standard XHR request SHOULD be in in_flight_requests
-        monitor.handle_event("Network.requestWillBeSent", {
-            "requestId": "xhr_1",
-            "request": {"url": "https://example.com/api", "method": "POST"},
-            "type": "XHR"
-        })
+        monitor.handle_event(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "xhr_1",
+                "request": {"url": "https://example.com/api", "method": "POST"},
+                "type": "XHR",
+            },
+        )
         self.assertIn("xhr_1", monitor.in_flight_requests)
 
         # 2. Test InFlightTracker TTL expiration in is_network_idle
@@ -189,25 +205,33 @@ class TestArchitecture(BaseBrowserTest):
 
         # 3. Test HTTP redirect handling without duplicate ring buffer eviction
         monitor.clear()
-        monitor.handle_event("Network.requestWillBeSent", {
-            "requestId": "req_red",
-            "request": {"url": "http://example.com", "method": "GET"},
-            "type": "Document"
-        })
+        monitor.handle_event(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "req_red",
+                "request": {"url": "http://example.com", "method": "GET"},
+                "type": "Document",
+            },
+        )
         self.assertEqual(len(monitor.ordered_requests), 1)
 
         # Redirect arrives with same requestId
-        monitor.handle_event("Network.requestWillBeSent", {
-            "requestId": "req_red",
-            "request": {"url": "https://example.com", "method": "GET"},
-            "redirectResponse": {"url": "http://example.com"},
-            "type": "Document"
-        })
+        monitor.handle_event(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "req_red",
+                "request": {"url": "https://example.com", "method": "GET"},
+                "redirectResponse": {"url": "http://example.com"},
+                "type": "Document",
+            },
+        )
         # Should not duplicate in ordered_requests
         self.assertEqual(len(monitor.ordered_requests), 1)
         self.assertIn("req_red", monitor.requests)
         self.assertEqual(monitor.requests["req_red"]["url"], "https://example.com")
-        self.assertEqual(monitor.requests["req_red"]["redirected_from"], "http://example.com")
+        self.assertEqual(
+            monitor.requests["req_red"]["redirected_from"], "http://example.com"
+        )
 
     def test_cdp_connect_lock_and_compounding_timeouts(self):
         client = CDPClient(port=self.test_port)
@@ -220,7 +244,9 @@ class TestArchitecture(BaseBrowserTest):
         async def run():
             await client.connect(target_id=self.tab_id)
             # Test navigation with remaining timeout handling
-            res = await client.navigate("about:blank", wait_until_loaded=True, timeout=5.0)
+            res = await client.navigate(
+                "about:blank", wait_until_loaded=True, timeout=5.0
+            )
             self.assertIn("frameId", res)
             await client.close()
 
@@ -238,8 +264,8 @@ class TestArchitecture(BaseBrowserTest):
                 "targetId": "target_1",
                 "type": "iframe",
                 "url": "https://widget.stripe.com/checkout",
-                "title": "Stripe Checkout"
-            }
+                "title": "Stripe Checkout",
+            },
         }
         client.frame_sessions["session_frame_1"] = params_iframe["targetInfo"]
         client.ref_session_map[10] = "session_frame_1"
@@ -251,7 +277,9 @@ class TestArchitecture(BaseBrowserTest):
 
         # Simulate Target.detachedFromTarget
         client.frame_sessions.pop("session_frame_1", None)
-        stale_refs = [r for r, sid in client.ref_session_map.items() if sid == "session_frame_1"]
+        stale_refs = [
+            r for r, sid in client.ref_session_map.items() if sid == "session_frame_1"
+        ]
         for r in stale_refs:
             client.ref_session_map.pop(r, None)
 
@@ -266,12 +294,14 @@ class TestArchitecture(BaseBrowserTest):
         client.frame_sessions["sess_frame_2"] = {
             "type": "iframe",
             "url": "https://pay.example.com/embed",
-            "title": "Payment Embed"
+            "title": "Payment Embed",
         }
 
         eval_calls = []
 
-        async def mock_evaluate(expr, await_promise=True, timeout=10.0, session_id=None):
+        async def mock_evaluate(
+            expr, await_promise=True, timeout=10.0, session_id=None
+        ):
             eval_calls.append({"expr": expr, "session_id": session_id})
             if expr.strip() == "window.location.href":
                 return "https://main.example.com"
@@ -287,7 +317,7 @@ class TestArchitecture(BaseBrowserTest):
                     "next_id": 2,
                     "count": 1,
                     "total_count": 1,
-                    "truncated": False
+                    "truncated": False,
                 }
             elif session_id == "sess_frame_2":
                 return {
@@ -296,12 +326,14 @@ class TestArchitecture(BaseBrowserTest):
                     "root": "document",
                     "in_viewport": False,
                     "headings": ["H2: Enter Card"],
-                    "interactive": ['@2 (iframe:pay.example.com) [input] [type=text name="card"]'],
+                    "interactive": [
+                        '@2 (iframe:pay.example.com) [input] [type=text name="card"]'
+                    ],
                     "ref_ids": [2],
                     "next_id": 3,
                     "count": 1,
                     "total_count": 1,
-                    "truncated": False
+                    "truncated": False,
                 }
             return None
 
@@ -312,7 +344,10 @@ class TestArchitecture(BaseBrowserTest):
             self.assertEqual(data["title"], "Main Store")
             self.assertEqual(len(data["interactive"]), 2)
             self.assertEqual(data["interactive"][0], '@1 [button] "Checkout"')
-            self.assertEqual(data["interactive"][1], '@2 (iframe:pay.example.com) [input] [type=text name="card"]')
+            self.assertEqual(
+                data["interactive"][1],
+                '@2 (iframe:pay.example.com) [input] [type=text name="card"]',
+            )
             self.assertEqual(client.ref_session_map[1], None)
             self.assertEqual(client.ref_session_map[2], "sess_frame_2")
 
@@ -359,6 +394,7 @@ class TestArchitecture(BaseBrowserTest):
             await self.cdp.close()
 
         asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

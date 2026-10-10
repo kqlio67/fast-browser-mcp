@@ -55,3 +55,9 @@ fast-browser-mcp = "fast_browser.server:main"
 Homepage = "https://github.com/kqlio67/fast-browser-mcp"
 Repository = "https://github.com/kqlio67/fast-browser-mcp.git"
 Issues = "https://github.com/kqlio67/fast-browser-mcp/issues"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "ruff>=0.17.0",
+]

@@ -3,8 +3,9 @@ import base64
 import json
 import os
 import time
-import aiofiles
 from typing import Any, TypedDict
+
+import aiofiles
 
 from .cdp import CDPClient
 from .snapshot import PageSnapshot
@@ -32,18 +33,78 @@ class BatchStep(TypedDict, total=False):
     page: str | None
     profile: str | None
 
+
 VALID_ACTIONS: set[str] = {
-    'back', 'block_resources', 'block_urls', 'cdp_send', 'cleanup_tabs', 'clear_cache', 'clear_cookies',
-    'click', 'clipboard', 'console_logs', 'cpu_throttling', 'css_styles', 'double_click', 'drag_and_drop',
-    'eval', 'export_traffic', 'extension_action', 'extensions', 'extract', 'fill', 'find', 'forward',
-    'geolocation', 'get_html', 'get_storage', 'grant_permissions', 'handle_dialog', 'history', 'hover',
-    'indexeddb', 'isolated_tab', 'metrics', 'performance_metrics', 'mouse_move', 'mute', 'navigate',
-    'network_requests', 'pdf', 'permissions', 'preload_script', 'press_key', 'reload', 'right_click',
-    'screenshot', 'scroll', 'select_option', 'set_cookie', 'set_download_path', 'download_path',
-    'set_geolocation', 'set_headers', 'set_timezone', 'set_user_agent', 'set_viewport', 'snapshot',
-    'ssl_ignore', 'stealth', 'system_info', 'system_page', 'theme', 'throttling', 'timezone',
-    'upload_file', 'wait', 'wait_idle', 'window', 'ws_messages', 'zoom'
+    "back",
+    "block_resources",
+    "block_urls",
+    "cdp_send",
+    "cleanup_tabs",
+    "clear_cache",
+    "clear_cookies",
+    "click",
+    "clipboard",
+    "console_logs",
+    "cpu_throttling",
+    "css_styles",
+    "double_click",
+    "drag_and_drop",
+    "eval",
+    "export_traffic",
+    "extension_action",
+    "extensions",
+    "extract",
+    "fill",
+    "find",
+    "forward",
+    "geolocation",
+    "get_html",
+    "get_storage",
+    "grant_permissions",
+    "handle_dialog",
+    "history",
+    "hover",
+    "indexeddb",
+    "isolated_tab",
+    "metrics",
+    "performance_metrics",
+    "mouse_move",
+    "mute",
+    "navigate",
+    "network_requests",
+    "pdf",
+    "permissions",
+    "preload_script",
+    "press_key",
+    "reload",
+    "right_click",
+    "screenshot",
+    "scroll",
+    "select_option",
+    "set_cookie",
+    "set_download_path",
+    "download_path",
+    "set_geolocation",
+    "set_headers",
+    "set_timezone",
+    "set_user_agent",
+    "set_viewport",
+    "snapshot",
+    "ssl_ignore",
+    "stealth",
+    "system_info",
+    "system_page",
+    "theme",
+    "throttling",
+    "timezone",
+    "upload_file",
+    "wait",
+    "wait_idle",
+    "window",
+    "ws_messages",
+    "zoom",
 }
+
 
 class BatchRunner:
     def __init__(self, cdp: CDPClient, allowed_dir: str | None = None):
@@ -51,7 +112,9 @@ class BatchRunner:
         self.snapshot_tool = PageSnapshot(cdp)
         self.allowed_dir = allowed_dir or os.environ.get("FAST_BROWSER_ALLOWED_DIR")
 
-    def validate_path(self, path: str, must_exist: bool = False, for_write: bool = False) -> str:
+    def validate_path(
+        self, path: str, must_exist: bool = False, for_write: bool = False
+    ) -> str:
         """Validate and resolve file path according to sandboxing rules."""
         if not path or not isinstance(path, str):
             raise ValueError("Invalid file path: path must be a non-empty string")
@@ -80,7 +143,9 @@ class BatchRunner:
     def validate_step(cls, step: Any, idx: int) -> str | None:
         """Validate an individual batch step dictionary."""
         if not isinstance(step, dict):
-            return f"Step {idx + 1}: expected action dictionary, got {type(step).__name__}"
+            return (
+                f"Step {idx + 1}: expected action dictionary, got {type(step).__name__}"
+            )
         action = step.get("action")
         if not action or not isinstance(action, str):
             return f"Step {idx + 1}: missing or non-string 'action'"
@@ -92,7 +157,11 @@ class BatchRunner:
         if act == "navigate" and not step.get("url"):
             return f"Step {idx + 1} ('navigate'): missing required 'url'"
         if act in ("click", "double_click", "right_click", "hover"):
-            if not (step.get("ref") or step.get("selector") or (step.get("x") is not None and step.get("y") is not None)):
+            if not (
+                step.get("ref")
+                or step.get("selector")
+                or (step.get("x") is not None and step.get("y") is not None)
+            ):
                 return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
         if act == "fill":
             if not (step.get("ref") or step.get("selector")):
@@ -135,7 +204,7 @@ class BatchRunner:
                 "validation_errors": validation_errors,
                 "total_duration_ms": 0.0,
                 "steps_executed": 0,
-                "results": []
+                "results": [],
             }
 
         results: list[dict[str, Any]] = []
@@ -176,10 +245,14 @@ class BatchRunner:
                         }})()"""
                         success = await self.cdp.evaluate(js, session_id=session_id)
                         if not success:
-                            raise RuntimeError(f"Reference {ref} not found or expired. Run 'snapshot' again.")
+                            raise RuntimeError(
+                                f"Reference {ref} not found or expired. Run 'snapshot' again."
+                            )
                         step_res["detail"] = f"Clicked ref {ref}"
                     elif selector:
-                        await self.cdp.click(selector, timeout_ms=step.get("timeout_ms", 3000))
+                        await self.cdp.click(
+                            selector, timeout_ms=step.get("timeout_ms", 3000)
+                        )
                         step_res["detail"] = f"Clicked selector '{selector}'"
                     else:
                         raise ValueError("Click action requires 'ref' or 'selector'")
@@ -191,7 +264,11 @@ class BatchRunner:
                     x = step.get("x")
                     y = step.get("y")
                     opt_id_num = int(str(ref).replace("@", "")) if ref else None
-                    session_id = self.cdp.ref_session_map.get(opt_id_num) if opt_id_num is not None else None
+                    session_id = (
+                        self.cdp.ref_session_map.get(opt_id_num)
+                        if opt_id_num is not None
+                        else None
+                    )
                     if ref or selector:
                         if session_id:
                             js = f"""(() => {{
@@ -203,12 +280,14 @@ class BatchRunner:
                             }})()"""
                             success = await self.cdp.evaluate(js, session_id=session_id)
                             if not success:
-                                raise RuntimeError("Element not found for double_click in iframe")
+                                raise RuntimeError(
+                                    "Element not found for double_click in iframe"
+                                )
                             step_res["status"] = "ok"
                             step_res["detail"] = f"Double clicked ref {ref} in iframe"
                             continue
                         js = f"""(() => {{
-                            const el = {f'window.__fb_refs[{opt_id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            const el = {f"window.__fb_refs[{opt_id_num}]" if ref else f"document.querySelector({json.dumps(selector)})"};
                             if (!el) return null;
                             const r = el.getBoundingClientRect();
                             return {{x: r.x + r.width/2, y: r.y + r.height/2}};
@@ -229,7 +308,11 @@ class BatchRunner:
                     x = step.get("x")
                     y = step.get("y")
                     opt_id_num = int(str(ref).replace("@", "")) if ref else None
-                    session_id = self.cdp.ref_session_map.get(opt_id_num) if opt_id_num is not None else None
+                    session_id = (
+                        self.cdp.ref_session_map.get(opt_id_num)
+                        if opt_id_num is not None
+                        else None
+                    )
                     if ref or selector:
                         if session_id:
                             js = f"""(() => {{
@@ -241,12 +324,14 @@ class BatchRunner:
                             }})()"""
                             success = await self.cdp.evaluate(js, session_id=session_id)
                             if not success:
-                                raise RuntimeError("Element not found for right_click in iframe")
+                                raise RuntimeError(
+                                    "Element not found for right_click in iframe"
+                                )
                             step_res["status"] = "ok"
                             step_res["detail"] = f"Right clicked ref {ref} in iframe"
                             continue
                         js = f"""(() => {{
-                            const el = {f'window.__fb_refs[{opt_id_num}]' if ref else f'document.querySelector({json.dumps(selector)})'};
+                            const el = {f"window.__fb_refs[{opt_id_num}]" if ref else f"document.querySelector({json.dumps(selector)})"};
                             if (!el) return null;
                             const r = el.getBoundingClientRect();
                             return {{x: r.x + r.width/2, y: r.y + r.height/2}};
@@ -295,11 +380,20 @@ class BatchRunner:
                         end_x, end_y = coords["end_x"], coords["end_y"]
 
                     if any(v is None for v in [start_x, start_y, end_x, end_y]):
-                        raise ValueError("drag_and_drop requires coordinates or from_ref/to_ref")
+                        raise ValueError(
+                            "drag_and_drop requires coordinates or from_ref/to_ref"
+                        )
 
-                    await self.cdp.drag_and_drop(float(start_x or 0), float(start_y or 0), float(end_x or 0), float(end_y or 0))
+                    await self.cdp.drag_and_drop(
+                        float(start_x or 0),
+                        float(start_y or 0),
+                        float(end_x or 0),
+                        float(end_y or 0),
+                    )
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+                    step_res["detail"] = (
+                        f"Dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+                    )
 
                 elif action == "fill":
                     ref = step.get("ref")
@@ -323,11 +417,20 @@ class BatchRunner:
                         }})()"""
                         success = await self.cdp.evaluate(js, session_id=session_id)
                         if not success:
-                            raise RuntimeError(f"Reference {ref} not found or expired. Run 'snapshot' again.")
+                            raise RuntimeError(
+                                f"Reference {ref} not found or expired. Run 'snapshot' again."
+                            )
                         step_res["detail"] = f"Filled ref {ref} with {text!r}"
                     elif selector:
-                        await self.cdp.fill(selector, text, clear=clear, timeout_ms=step.get("timeout_ms", 3000))
-                        step_res["detail"] = f"Filled selector '{selector}' with {text!r}"
+                        await self.cdp.fill(
+                            selector,
+                            text,
+                            clear=clear,
+                            timeout_ms=step.get("timeout_ms", 3000),
+                        )
+                        step_res["detail"] = (
+                            f"Filled selector '{selector}' with {text!r}"
+                        )
                     else:
                         raise ValueError("Fill action requires 'ref' or 'selector'")
                     step_res["status"] = "ok"
@@ -384,7 +487,7 @@ class BatchRunner:
                                     el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     return true;
                                 }}
-                                if ({json.dumps(text)} !== null && opt.text.trim().toLowerCase() === {json.dumps(text or '')}.toLowerCase()) {{
+                                if ({json.dumps(text)} !== null && opt.text.trim().toLowerCase() === {json.dumps(text or "")}.toLowerCase()) {{
                                     el.selectedIndex = i;
                                     el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     return true;
@@ -397,9 +500,13 @@ class BatchRunner:
                             raise RuntimeError(f"Could not select option in ref {ref}")
                         step_res["detail"] = f"Selected option in ref {ref}"
                     elif selector:
-                        success = await self.cdp.select_option(selector, value=value, text=text)
+                        success = await self.cdp.select_option(
+                            selector, value=value, text=text
+                        )
                         if not success:
-                            raise RuntimeError(f"Could not select option in selector '{selector}'")
+                            raise RuntimeError(
+                                f"Could not select option in selector '{selector}'"
+                            )
                         step_res["detail"] = f"Selected option in selector '{selector}'"
                     else:
                         raise ValueError("select_option requires 'ref' or 'selector'")
@@ -486,7 +593,9 @@ class BatchRunner:
                 elif action == "set_cookie":
                     name = str(step.get("name", ""))
                     val = str(step.get("value", ""))
-                    await self.cdp.set_cookie(name, val, domain=step.get("domain"), path=step.get("path", "/"))
+                    await self.cdp.set_cookie(
+                        name, val, domain=step.get("domain"), path=step.get("path", "/")
+                    )
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Set cookie {name}={val}"
 
@@ -498,7 +607,9 @@ class BatchRunner:
                     safe_files = [self.validate_path(f, must_exist=True) for f in files]
                     await self.cdp.upload_file(selector, safe_files)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Uploaded {len(safe_files)} files to '{selector}'"
+                    step_res["detail"] = (
+                        f"Uploaded {len(safe_files)} files to '{selector}'"
+                    )
 
                 elif action == "get_html":
                     html = await self.cdp.get_html()
@@ -508,14 +619,18 @@ class BatchRunner:
                         safe_path = self.validate_path(path, for_write=True)
                         async with aiofiles.open(safe_path, "w", encoding="utf-8") as f:
                             await f.write(html)
-                        step_res["detail"] = f"HTML saved to {safe_path} ({len(html)} chars)"
+                        step_res["detail"] = (
+                            f"HTML saved to {safe_path} ({len(html)} chars)"
+                        )
                     else:
                         step_res["html"] = html[:10000]
 
                 elif action == "pdf":
                     path = step.get("save_path", "page.pdf")
                     safe_path = self.validate_path(path, for_write=True)
-                    b64 = await self.cdp.print_to_pdf(landscape=step.get("landscape", False))
+                    b64 = await self.cdp.print_to_pdf(
+                        landscape=step.get("landscape", False)
+                    )
                     async with aiofiles.open(safe_path, "wb") as pdf_f:
                         await pdf_f.write(base64.b64decode(b64))
                     step_res["status"] = "ok"
@@ -547,17 +662,25 @@ class BatchRunner:
                         await asyncio.sleep(ms / 1000.0)
                         step_res["detail"] = f"Waited {ms}ms"
                     elif selector:
-                        found = await self.cdp.wait_for_selector(selector, timeout_ms=step.get("timeout_ms", 5000))
-                        step_res["detail"] = f"Waited for selector '{selector}' (found={found})"
+                        found = await self.cdp.wait_for_selector(
+                            selector, timeout_ms=step.get("timeout_ms", 5000)
+                        )
+                        step_res["detail"] = (
+                            f"Waited for selector '{selector}' (found={found})"
+                        )
                     elif text:
-                        found = await self.cdp.wait_for_text(text, timeout_ms=step.get("timeout_ms", 5000))
+                        found = await self.cdp.wait_for_text(
+                            text, timeout_ms=step.get("timeout_ms", 5000)
+                        )
                         step_res["detail"] = f"Waited for text {text!r} (found={found})"
                     step_res["status"] = "ok"
 
                 elif action == "eval":
                     script = step.get("script") or step.get("expression")
                     if not script:
-                        raise ValueError("Missing 'script' or 'expression' for eval action")
+                        raise ValueError(
+                            "Missing 'script' or 'expression' for eval action"
+                        )
                     val = await self.cdp.evaluate(script)
                     step_res["status"] = "ok"
                     step_res["result"] = val
@@ -566,7 +689,7 @@ class BatchRunner:
                     snap = await self.snapshot_tool.capture_formatted(
                         selector=step.get("selector"),
                         in_viewport=step.get("in_viewport", False),
-                        max_elements=step.get("max_elements")
+                        max_elements=step.get("max_elements"),
                     )
                     step_res["status"] = "ok"
                     step_res["snapshot"] = snap
@@ -591,29 +714,39 @@ class BatchRunner:
                     filter_type = step.get("type")
                     url_pattern = step.get("url")
                     limit = step.get("limit", 20)
-                    reqs = self.cdp.network.list_requests(filter_type=filter_type, url_pattern=url_pattern, limit=limit)
+                    reqs = self.cdp.network.list_requests(
+                        filter_type=filter_type, url_pattern=url_pattern, limit=limit
+                    )
                     step_res["status"] = "ok"
                     step_res["requests"] = reqs
 
                 elif action == "ws_messages":
                     direction = step.get("direction")
                     limit = step.get("limit", 20)
-                    frames = self.cdp.network.list_ws_frames(direction=direction, limit=limit)
+                    frames = self.cdp.network.list_ws_frames(
+                        direction=direction, limit=limit
+                    )
                     step_res["status"] = "ok"
                     step_res["ws_frames"] = frames
 
                 elif action == "screenshot":
                     full_page = step.get("full_page", False)
                     clip_selector = step.get("selector")
-                    data_b64 = await self.cdp.capture_screenshot(full_page=full_page, clip_selector=clip_selector)
+                    data_b64 = await self.cdp.capture_screenshot(
+                        full_page=full_page, clip_selector=clip_selector
+                    )
                     path = step.get("save_path")
                     if path:
                         safe_path = self.validate_path(path, for_write=True)
                         async with aiofiles.open(safe_path, "wb") as img_f:
                             await img_f.write(base64.b64decode(data_b64))
-                        step_res["detail"] = f"Screenshot saved to {safe_path} (full_page={full_page})"
+                        step_res["detail"] = (
+                            f"Screenshot saved to {safe_path} (full_page={full_page})"
+                        )
                     else:
-                        step_res["detail"] = f"Screenshot captured ({len(data_b64)} b64 bytes)"
+                        step_res["detail"] = (
+                            f"Screenshot captured ({len(data_b64)} b64 bytes)"
+                        )
                     step_res["status"] = "ok"
 
                 elif action == "window":
@@ -623,8 +756,12 @@ class BatchRunner:
                     left = step.get("left")
                     top = step.get("top")
                     if any(v is not None for v in [state, width, height, left, top]):
-                        await self.cdp.set_window_bounds(state=state, width=width, height=height, left=left, top=top)
-                        step_res["detail"] = f"Window updated: state={state}, size={width}x{height}, pos=({left}, {top})"
+                        await self.cdp.set_window_bounds(
+                            state=state, width=width, height=height, left=left, top=top
+                        )
+                        step_res["detail"] = (
+                            f"Window updated: state={state}, size={width}x{height}, pos=({left}, {top})"
+                        )
                     else:
                         win = await self.cdp.get_window_bounds()
                         step_res["window"] = win
@@ -650,7 +787,9 @@ class BatchRunner:
                     ext_id = step.get("id") or step.get("extension_id")
                     ext_action = step.get("action_type") or step.get("subaction")
                     if not ext_id or not ext_action:
-                        raise ValueError("extension_action requires 'id' and 'action_type' ('enable', 'disable', 'reload', 'options', 'popup')")
+                        raise ValueError(
+                            "extension_action requires 'id' and 'action_type' ('enable', 'disable', 'reload', 'options', 'popup')"
+                        )
                     res = await self.cdp.extension_action(ext_id, ext_action)
                     step_res["status"] = "ok"
                     step_res["result"] = res
@@ -680,13 +819,17 @@ class BatchRunner:
                     delta = step.get("delta", 1)
                     res = await self.cdp.go_back(delta=delta)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Navigated back {delta} step(s): {res.get('url')}"
+                    step_res["detail"] = (
+                        f"Navigated back {delta} step(s): {res.get('url')}"
+                    )
 
                 elif action == "forward":
                     delta = step.get("delta", 1)
                     res = await self.cdp.go_forward(delta=delta)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Navigated forward {delta} step(s): {res.get('url')}"
+                    step_res["detail"] = (
+                        f"Navigated forward {delta} step(s): {res.get('url')}"
+                    )
 
                 elif action == "history":
                     hist = await self.cdp.get_navigation_history()
@@ -713,7 +856,7 @@ class BatchRunner:
                         offline=step.get("offline"),
                         latency=step.get("latency"),
                         download_throughput=step.get("download_throughput"),
-                        upload_throughput=step.get("upload_throughput")
+                        upload_throughput=step.get("upload_throughput"),
                     )
                     step_res["status"] = "ok"
                     step_res["throttling"] = res
@@ -749,7 +892,9 @@ class BatchRunner:
 
                 elif action == "find":
                     query = step.get("query", "")
-                    res = await self.cdp.find_in_page(query=query, scroll_to_first=step.get("scroll", True))
+                    res = await self.cdp.find_in_page(
+                        query=query, scroll_to_first=step.get("scroll", True)
+                    )
                     step_res["status"] = "ok"
                     step_res["find_result"] = res
 
@@ -767,7 +912,9 @@ class BatchRunner:
                 elif action == "wait_idle":
                     idle_time = step.get("idle_time", 0.5)
                     timeout = step.get("timeout", 10.0)
-                    ok = await self.cdp.wait_for_network_idle(idle_time=idle_time, timeout=timeout)
+                    ok = await self.cdp.wait_for_network_idle(
+                        idle_time=idle_time, timeout=timeout
+                    )
                     step_res["status"] = "ok"
                     step_res["idle"] = ok
 
@@ -777,7 +924,7 @@ class BatchRunner:
                         block_images=step.get("images", False),
                         block_media=step.get("media", False),
                         block_fonts=step.get("fonts", False),
-                        block_ads=step.get("ads", False)
+                        block_ads=step.get("ads", False),
                     )
                     step_res["status"] = "ok"
                     step_res["blocked"] = res
@@ -786,7 +933,7 @@ class BatchRunner:
                     res = await self.cdp.cleanup_tabs_async(
                         keep_current=step.get("keep_current", True),
                         close_blank=step.get("close_blank", True),
-                        url_patterns=step.get("url_patterns")
+                        url_patterns=step.get("url_patterns"),
                     )
                     step_res["status"] = "ok"
                     step_res["cleanup"] = res
@@ -800,7 +947,9 @@ class BatchRunner:
                     lat = step.get("latitude", 0.0)
                     lon = step.get("longitude", 0.0)
                     acc = step.get("accuracy", 1.0)
-                    res = await self.cdp.set_geolocation(latitude=lat, longitude=lon, accuracy=acc)
+                    res = await self.cdp.set_geolocation(
+                        latitude=lat, longitude=lon, accuracy=acc
+                    )
                     step_res["status"] = "ok"
                     step_res["geolocation"] = res
 
@@ -813,7 +962,9 @@ class BatchRunner:
                 elif action == "permissions":
                     perms = step.get("permissions", [])
                     origin = step.get("origin")
-                    res = await self.cdp.grant_permissions(permissions=perms, origin=origin)
+                    res = await self.cdp.grant_permissions(
+                        permissions=perms, origin=origin
+                    )
                     step_res["status"] = "ok"
                     step_res["permissions"] = res
 
@@ -822,7 +973,9 @@ class BatchRunner:
                     if not method:
                         raise ValueError("Missing 'method' for cdp_send action")
                     params = step.get("params")
-                    res = await self.cdp.send_cdp(method=method, params=params, timeout=step.get("timeout", 10.0))
+                    res = await self.cdp.send_cdp(
+                        method=method, params=params, timeout=step.get("timeout", 10.0)
+                    )
                     step_res["status"] = "ok"
                     step_res["cdp_result"] = res
 
@@ -871,5 +1024,5 @@ class BatchRunner:
             "success": all_ok,
             "total_duration_ms": total_time_ms,
             "steps_executed": len(results),
-            "results": results
+            "results": results,
         }

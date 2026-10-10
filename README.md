@@ -180,7 +180,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 
 ---
 
-## 🛠️ Complete Tool Reference (64 Tools)
+## 🛠️ Complete Tool Reference (69 Tools)
 
 ### 📑 Tab & Navigation
 | Tool | Description |
@@ -200,6 +200,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 |---|---|
 | `browser_click` | Click an element by snapshot ref (`@1`, `@2`) or CSS selector |
 | `browser_fill` | Type text into an input element by ref or CSS selector |
+| `browser_fill_form` | Fill multiple form elements in one fast batch execution |
 | `browser_press_key` | Dispatch keyboard key event (`Enter`, `Escape`, `Tab`, `ArrowDown`, etc.) |
 | `browser_scroll` | Scroll page by $(\Delta x, \Delta y)$ or scroll element into view |
 | `browser_mouse` | Advanced mouse operations: `double_click`, `right_click`, `move`, `drag_and_drop` |
@@ -213,6 +214,8 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_snapshot` | Compact, token-efficient A11y tree with `@ref` markers, Shadow DOM traversal, optional CSS selector scoping, and viewport filtering |
 | `browser_get_html` | Extract full document `outerHTML` or save directly to a file |
 | `browser_screenshot` | Capture viewport, element clip, or full-page scrollable screenshot (PNG/JPEG) |
+| `browser_screencast_start` | Start capturing a screencast video of the browser viewport |
+| `browser_screencast_stop` | Stop capturing screencast video and save the result |
 | `browser_print_to_pdf` | Print page to PDF file with landscape/background options |
 | `browser_eval` | Evaluate arbitrary JavaScript expressions in the page context |
 
@@ -220,6 +223,8 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | Tool | Description |
 |---|---|
 | `browser_cdp_send` | **Universal CDP Raw Dispatcher**: Execute any of the 1,000+ Chrome DevTools Protocol commands directly (e.g. `DOM.enable`, `Storage.getCookies`, `Emulation.setDeviceMetricsOverride`, `Security.enable`, etc.) |
+| `browser_list_webmcp_tools` | List WebMCP tools exposed by the web page |
+| `browser_execute_webmcp_tool` | Execute a WebMCP tool exposed by the web page |
 | `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, box model, and fonts for any element by `@ref` or CSS selector |
 | `browser_new_isolated_tab` | Spawn a tab in a completely isolated incognito browser context (`Target.createBrowserContext`) with clean session, cookies, and cache |
 | `browser_set_cpu_throttling` | Emulate CPU slowdown factors (`1.0` = normal, `2.0` = 2x slowdown, `4.0` = 4x slowdown) for low-end device testing |

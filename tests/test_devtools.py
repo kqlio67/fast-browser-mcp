@@ -8,8 +8,8 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestDevTools(BaseBrowserTest):
 
+class TestDevTools(BaseBrowserTest):
     def test_send_cdp_raw(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
@@ -17,6 +17,7 @@ class TestDevTools(BaseBrowserTest):
             self.assertIn("product", ver)
             self.assertIn("protocolVersion", ver)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_get_css_styles(self):
@@ -36,6 +37,7 @@ class TestDevTools(BaseBrowserTest):
             self.assertIn("computed", styles)
             self.assertIn("24px", styles["computed"].get("font-size", ""))
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_new_isolated_tab(self):
@@ -49,6 +51,7 @@ class TestDevTools(BaseBrowserTest):
             if iso.get("target_id"):
                 self.cdp.close_tab_sync(iso["target_id"])
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_cpu_throttling(self):
@@ -60,6 +63,7 @@ class TestDevTools(BaseBrowserTest):
             # Reset
             await self.cdp.set_cpu_throttling(rate=1.0)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_dialog_handling(self):
@@ -71,6 +75,7 @@ class TestDevTools(BaseBrowserTest):
             await asyncio.sleep(0.3)
             self.assertIn("v8-dialog-test", self.cdp.last_dialog_message or "")
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_batch_devtools_actions(self):
@@ -87,7 +92,7 @@ class TestDevTools(BaseBrowserTest):
             steps = [
                 {"action": "cdp_send", "method": "DOM.getDocument"},
                 {"action": "css_styles", "selector": "#batch-span"},
-                {"action": "cpu_throttling", "rate": 1.0}
+                {"action": "cpu_throttling", "rate": 1.0},
             ]
             res = await batch.execute(steps)
             self.assertTrue(res["success"])
@@ -95,7 +100,9 @@ class TestDevTools(BaseBrowserTest):
             self.assertIn("cdp_result", res["results"][0])
             self.assertIn("css_styles", res["results"][1])
             await self.cdp.close()
+
         asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

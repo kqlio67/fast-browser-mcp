@@ -1,6 +1,6 @@
 import asyncio
-import json
 import base64
+import json
 import logging
 import os
 
@@ -18,24 +18,36 @@ from .network import ConsoleMonitor, NetworkMonitor
 logger = logging.getLogger("fast_browser.cdp")
 
 KEY_DEFINITIONS = {
-    "Enter": {"windowsVirtualKeyCode": 13, "code": "Enter", "key": "Enter", "text": "\r"},
+    "Enter": {
+        "windowsVirtualKeyCode": 13,
+        "code": "Enter",
+        "key": "Enter",
+        "text": "\r",
+    },
     "Tab": {"windowsVirtualKeyCode": 9, "code": "Tab", "key": "Tab"},
     "Escape": {"windowsVirtualKeyCode": 27, "code": "Escape", "key": "Escape"},
     "Backspace": {"windowsVirtualKeyCode": 8, "code": "Backspace", "key": "Backspace"},
     "ArrowDown": {"windowsVirtualKeyCode": 40, "code": "ArrowDown", "key": "ArrowDown"},
     "ArrowUp": {"windowsVirtualKeyCode": 38, "code": "ArrowUp", "key": "ArrowUp"},
     "ArrowLeft": {"windowsVirtualKeyCode": 37, "code": "ArrowLeft", "key": "ArrowLeft"},
-    "ArrowRight": {"windowsVirtualKeyCode": 39, "code": "ArrowRight", "key": "ArrowRight"},
+    "ArrowRight": {
+        "windowsVirtualKeyCode": 39,
+        "code": "ArrowRight",
+        "key": "ArrowRight",
+    },
     "Space": {"windowsVirtualKeyCode": 32, "code": "Space", "key": " ", "text": " "},
     "PageDown": {"windowsVirtualKeyCode": 34, "code": "PageDown", "key": "PageDown"},
-    "PageUp": {"windowsVirtualKeyCode": 33, "code": "PageUp", "key": "PageUp"}
+    "PageUp": {"windowsVirtualKeyCode": 33, "code": "PageUp", "key": "PageUp"},
 }
+
 
 class CDPClient:
     def __init__(self, host: str | None = None, port: int | None = None):
         self.host = host or os.environ.get("CDP_HOST", "127.0.0.1")
         env_port = os.environ.get("CDP_PORT")
-        self.port = int(port if port is not None else (int(env_port) if env_port else 9222))
+        self.port = int(
+            port if port is not None else (int(env_port) if env_port else 9222)
+        )
         self.ws_url: str | None = None
         self.target_id: str | None = None
         self._ws: websockets.WebSocketClientProtocol | None = None
@@ -80,7 +92,9 @@ class CDPClient:
         """Asynchronously list CDP targets without blocking the event loop."""
         return await asyncio.to_thread(self.list_targets)
 
-    def find_target(self, query: str | None = None, target_type: str = "page") -> dict[str, Any] | None:
+    def find_target(
+        self, query: str | None = None, target_type: str = "page"
+    ) -> dict[str, Any] | None:
         targets = self.list_targets()
         pages = [t for t in targets if t.get("type") == target_type]
         if not pages:
@@ -89,11 +103,17 @@ class CDPClient:
             return pages[0]
         q = query.lower()
         for p in pages:
-            if q in p.get("title", "").lower() or q in p.get("url", "").lower() or q == p.get("id", "").lower():
+            if (
+                q in p.get("title", "").lower()
+                or q in p.get("url", "").lower()
+                or q == p.get("id", "").lower()
+            ):
                 return p
         return None
 
-    async def find_target_async(self, query: str | None = None, target_type: str = "page") -> dict[str, Any] | None:
+    async def find_target_async(
+        self, query: str | None = None, target_type: str = "page"
+    ) -> dict[str, Any] | None:
         """Asynchronously find a matching CDP target without blocking the event loop."""
         targets = await self.list_targets_async()
         pages = [t for t in targets if t.get("type") == target_type]
@@ -103,7 +123,11 @@ class CDPClient:
             return pages[0]
         q = query.lower()
         for p in pages:
-            if q in p.get("title", "").lower() or q in p.get("url", "").lower() or q == p.get("id", "").lower():
+            if (
+                q in p.get("title", "").lower()
+                or q in p.get("url", "").lower()
+                or q == p.get("id", "").lower()
+            ):
                 return p
         return None
 
@@ -127,7 +151,9 @@ class CDPClient:
             self._connect_lock = asyncio.Lock()
         return self._connect_lock
 
-    async def connect(self, target_query: str | None = None, target_id: str | None = None):
+    async def connect(
+        self, target_query: str | None = None, target_id: str | None = None
+    ):
         async with self.connect_lock:
             if target_id and self.target_id == target_id and self.is_connected:
                 return
@@ -139,12 +165,16 @@ class CDPClient:
             else:
                 target = await self.find_target_async(target_query)
             if not target:
-                raise RuntimeError(f"No matching browser page found (query={target_query!r}, target_id={target_id!r}) on {self.host}:{self.port}")
+                raise RuntimeError(
+                    f"No matching browser page found (query={target_query!r}, target_id={target_id!r}) on {self.host}:{self.port}"
+                )
 
             self.target_id = target.get("id")
             self.ws_url = target.get("webSocketDebuggerUrl")
             if not self.ws_url:
-                raise RuntimeError(f"Target {self.target_id} has no webSocketDebuggerUrl")
+                raise RuntimeError(
+                    f"Target {self.target_id} has no webSocketDebuggerUrl"
+                )
 
             if self.is_connected:
                 await self.close()
@@ -160,11 +190,14 @@ class CDPClient:
 
             # Auto-attach to child targets (e.g. cross-origin iframes) in flattened mode
             try:
-                await self.send("Target.setAutoAttach", {
-                    "autoAttach": True,
-                    "waitForDebuggerOnStart": False,
-                    "flatten": True
-                })
+                await self.send(
+                    "Target.setAutoAttach",
+                    {
+                        "autoAttach": True,
+                        "waitForDebuggerOnStart": False,
+                        "flatten": True,
+                    },
+                )
             except Exception as e:
                 logger.debug(f"Target.setAutoAttach failed or not supported: {e}")
 
@@ -205,7 +238,9 @@ class CDPClient:
                     fut = self._pending_requests.pop(msg_id)
                     if not fut.done():
                         if "error" in msg:
-                            fut.set_exception(RuntimeError(f"CDP Error: {msg['error']}"))
+                            fut.set_exception(
+                                RuntimeError(f"CDP Error: {msg['error']}")
+                            )
                         else:
                             fut.set_result(msg.get("result", {}))
                     continue
@@ -219,7 +254,7 @@ class CDPClient:
                     self.network.handle_event(method, params)
 
                 # Console logs monitor
-                elif method.startswith("Runtime.console") or method.startswith("Runtime.exception"):
+                elif method.startswith(("Runtime.console", "Runtime.exception")):
                     self.console.handle_event(method, params)
 
                 # Automatic Dialog handling (alert, confirm, prompt)
@@ -232,16 +267,24 @@ class CDPClient:
                         except Exception as e:
                             logger.error(f"Failed to write screencast frame: {e}")
                         # Acknowledge frame
-                        asyncio.create_task(self.send_cdp("Page.screencastFrameAck", {"sessionId": session_id}))
+                        asyncio.create_task(
+                            self.send_cdp(
+                                "Page.screencastFrameAck", {"sessionId": session_id}
+                            )
+                        )
 
                 elif method == "Page.javascriptDialogOpening":
                     self.last_dialog_message = params.get("message")
-                    logger.warning(f"JavaScript dialog opened: {self.last_dialog_message!r} (type={params.get('type')})")
+                    logger.warning(
+                        f"JavaScript dialog opened: {self.last_dialog_message!r} (type={params.get('type')})"
+                    )
                     if self.auto_accept_dialogs:
                         d_params = {"accept": self.dialog_action == "accept"}
                         if self.dialog_prompt_text is not None:
                             d_params["promptText"] = self.dialog_prompt_text
-                        asyncio.create_task(self.send("Page.handleJavaScriptDialog", d_params))
+                        asyncio.create_task(
+                            self.send("Page.handleJavaScriptDialog", d_params)
+                        )
 
                 # Child target attachment (cross-origin iframes / OOPIF)
                 elif method == "Target.attachedToTarget":
@@ -251,16 +294,27 @@ class CDPClient:
                     if session_id:
                         if target_type == "iframe":
                             self.frame_sessions[session_id] = target_info
-                            logger.debug(f"Attached to child iframe session {session_id} (url={target_info.get('url')})")
+                            logger.debug(
+                                f"Attached to child iframe session {session_id} (url={target_info.get('url')})"
+                            )
                             asyncio.create_task(self._init_frame_session(session_id))
                         if params.get("waitingForDebugger"):
-                            asyncio.create_task(self.send("Runtime.runIfWaitingForDebugger", session_id=session_id))
+                            asyncio.create_task(
+                                self.send(
+                                    "Runtime.runIfWaitingForDebugger",
+                                    session_id=session_id,
+                                )
+                            )
 
                 elif method == "Target.detachedFromTarget":
                     session_id = params.get("sessionId")
                     if session_id and session_id in self.frame_sessions:
                         self.frame_sessions.pop(session_id, None)
-                        stale_refs = [r for r, sid in self.ref_session_map.items() if sid == session_id]
+                        stale_refs = [
+                            r
+                            for r, sid in self.ref_session_map.items()
+                            if sid == session_id
+                        ]
                         for r in stale_refs:
                             self.ref_session_map.pop(r, None)
                         logger.debug(f"Detached child iframe session {session_id}")
@@ -272,17 +326,29 @@ class CDPClient:
         finally:
             for fut in list(self._pending_requests.values()):
                 if not fut.done():
-                    fut.set_exception(ConnectionResetError("CDP WebSocket connection was closed"))
+                    fut.set_exception(
+                        ConnectionResetError("CDP WebSocket connection was closed")
+                    )
             self._pending_requests.clear()
 
-    async def send(self, method: str, params: dict[str, Any] | None = None, timeout: float = 10.0, session_id: str | None = None) -> dict[str, Any]:
+    async def send(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        timeout: float = 10.0,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         if not self.is_connected:
             if self.target_id:
                 try:
-                    logger.info(f"CDP socket disconnected. Auto-reconnecting to target {self.target_id}...")
+                    logger.info(
+                        f"CDP socket disconnected. Auto-reconnecting to target {self.target_id}..."
+                    )
                     await self.connect(target_id=self.target_id)
                 except Exception as e:
-                    raise RuntimeError(f"CDP WebSocket disconnected and auto-reconnect failed: {e}")
+                    raise RuntimeError(
+                        f"CDP WebSocket disconnected and auto-reconnect failed: {e}"
+                    )
             else:
                 raise RuntimeError("CDP WebSocket is not connected.")
 
@@ -314,20 +380,30 @@ class CDPClient:
             return await asyncio.wait_for(fut, timeout=timeout)
         except asyncio.TimeoutError:
             self._pending_requests.pop(req_id, None)
-            raise TimeoutError(f"CDP command {method} (id={req_id}) timed out after {timeout}s")
+            raise TimeoutError(
+                f"CDP command {method} (id={req_id}) timed out after {timeout}s"
+            )
 
-    async def evaluate(self, expression: str, await_promise: bool = True, timeout: float = 10.0, session_id: str | None = None) -> Any:
+    async def evaluate(
+        self,
+        expression: str,
+        await_promise: bool = True,
+        timeout: float = 10.0,
+        session_id: str | None = None,
+    ) -> Any:
         expr = expression.strip()
-        if "return " in expr and not (expr.startswith("(") or expr.startswith("function") or expr.startswith("async")):
+        if "return " in expr and not (expr.startswith(("(", "function", "async"))):
             expr = f"(() => {{ {expr} }})()"
 
         params = {
             "expression": expr,
             "returnByValue": True,
             "awaitPromise": await_promise,
-            "userGesture": True
+            "userGesture": True,
         }
-        res = await self.send("Runtime.evaluate", params, timeout=timeout, session_id=session_id)
+        res = await self.send(
+            "Runtime.evaluate", params, timeout=timeout, session_id=session_id
+        )
         result_obj = res.get("result", {})
         if res.get("exceptionDetails"):
             exc = res["exceptionDetails"]
@@ -335,7 +411,9 @@ class CDPClient:
             raise RuntimeError(f"JavaScript evaluation error: {desc}")
         return result_obj.get("value")
 
-    async def navigate(self, url: str, wait_until_loaded: bool = True, timeout: float = 15.0) -> dict[str, Any]:
+    async def navigate(
+        self, url: str, wait_until_loaded: bool = True, timeout: float = 15.0
+    ) -> dict[str, Any]:
         t0 = asyncio.get_running_loop().time()
         res = await self.send("Page.navigate", {"url": url}, timeout=timeout)
         if wait_until_loaded:
@@ -344,9 +422,13 @@ class CDPClient:
             await self.wait_for_dom_ready(timeout=rem_timeout)
         return res
 
-    async def reload(self, ignore_cache: bool = False, timeout: float = 15.0) -> dict[str, Any]:
+    async def reload(
+        self, ignore_cache: bool = False, timeout: float = 15.0
+    ) -> dict[str, Any]:
         t0 = asyncio.get_running_loop().time()
-        res = await self.send("Page.reload", {"ignoreCache": ignore_cache}, timeout=timeout)
+        res = await self.send(
+            "Page.reload", {"ignoreCache": ignore_cache}, timeout=timeout
+        )
         elapsed = asyncio.get_running_loop().time() - t0
         rem_timeout = max(0.5, timeout - elapsed)
         await self.wait_for_dom_ready(timeout=rem_timeout)
@@ -361,7 +443,9 @@ class CDPClient:
         tid = target_id or self.target_id
         if not tid:
             return False
-        res = requests.get(f"http://{self.host}:{self.port}/json/close/{tid}", timeout=5)
+        res = requests.get(
+            f"http://{self.host}:{self.port}/json/close/{tid}", timeout=5
+        )
         return res.status_code == 200
 
     async def new_tab(self, url: str = "about:blank") -> dict[str, Any]:
@@ -407,7 +491,9 @@ class CDPClient:
             await asyncio.sleep(0.05)
         return False
 
-    async def wait_for_element_stable(self, selector: str, timeout_ms: int = 3000) -> bool:
+    async def wait_for_element_stable(
+        self, selector: str, timeout_ms: int = 3000
+    ) -> bool:
         """Wait until element is present, visible, has dimensions > 0, and position is stable (no active animations)."""
         js = f"""(async () => {{
             const el = document.querySelector({json.dumps(selector)});
@@ -436,7 +522,9 @@ class CDPClient:
             await asyncio.sleep(0.05)
         return False
 
-    async def click(self, selector: str, timeout_ms: int = 3000, wait_stable: bool = True) -> bool:
+    async def click(
+        self, selector: str, timeout_ms: int = 3000, wait_stable: bool = True
+    ) -> bool:
         js = f"""(() => {{
             const el = document.querySelector({json.dumps(selector)});
             if (!el) return false;
@@ -449,40 +537,114 @@ class CDPClient:
             if not stable:
                 found = await self.wait_for_selector(selector, timeout_ms=500)
                 if not found:
-                    raise RuntimeError(f"Element '{selector}' not found or not stable within {timeout_ms}ms")
+                    raise RuntimeError(
+                        f"Element '{selector}' not found or not stable within {timeout_ms}ms"
+                    )
         else:
             found = await self.wait_for_selector(selector, timeout_ms=timeout_ms)
             if not found:
-                raise RuntimeError(f"Element '{selector}' not found for click within {timeout_ms}ms")
+                raise RuntimeError(
+                    f"Element '{selector}' not found for click within {timeout_ms}ms"
+                )
         return await self.evaluate(js)
 
     async def double_click(self, x: float, y: float) -> bool:
         for _ in range(2):
-            await self.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 2})
-            await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 2})
+            await self.send(
+                "Input.dispatchMouseEvent",
+                {
+                    "type": "mousePressed",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "clickCount": 2,
+                },
+            )
+            await self.send(
+                "Input.dispatchMouseEvent",
+                {
+                    "type": "mouseReleased",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "clickCount": 2,
+                },
+            )
         return True
 
     async def right_click(self, x: float, y: float) -> bool:
-        await self.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "right", "clickCount": 1})
-        await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "right", "clickCount": 1})
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mousePressed",
+                "x": x,
+                "y": y,
+                "button": "right",
+                "clickCount": 1,
+            },
+        )
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseReleased",
+                "x": x,
+                "y": y,
+                "button": "right",
+                "clickCount": 1,
+            },
+        )
         return True
 
     async def mouse_move(self, x: float, y: float) -> bool:
-        await self.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        await self.send(
+            "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y}
+        )
         return True
 
-    async def drag_and_drop(self, start_x: float, start_y: float, end_x: float, end_y: float, steps: int = 10) -> bool:
+    async def drag_and_drop(
+        self,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        steps: int = 10,
+    ) -> bool:
         await self.mouse_move(start_x, start_y)
-        await self.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": start_x, "y": start_y, "button": "left", "clickCount": 1})
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mousePressed",
+                "x": start_x,
+                "y": start_y,
+                "button": "left",
+                "clickCount": 1,
+            },
+        )
         for i in range(1, steps + 1):
             curr_x = start_x + (end_x - start_x) * (i / steps)
             curr_y = start_y + (end_y - start_y) * (i / steps)
             await self.mouse_move(curr_x, curr_y)
             await asyncio.sleep(0.02)
-        await self.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": end_x, "y": end_y, "button": "left", "clickCount": 1})
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseReleased",
+                "x": end_x,
+                "y": end_y,
+                "button": "left",
+                "clickCount": 1,
+            },
+        )
         return True
 
-    async def fill(self, selector: str, text: str, clear: bool = True, timeout_ms: int = 3000, wait_stable: bool = True) -> bool:
+    async def fill(
+        self,
+        selector: str,
+        text: str,
+        clear: bool = True,
+        timeout_ms: int = 3000,
+        wait_stable: bool = True,
+    ) -> bool:
         js = f"""(() => {{
             const el = document.querySelector({json.dumps(selector)});
             if (!el) return false;
@@ -501,11 +663,15 @@ class CDPClient:
             if not stable:
                 found = await self.wait_for_selector(selector, timeout_ms=500)
                 if not found:
-                    raise RuntimeError(f"Element '{selector}' not found or not stable within {timeout_ms}ms")
+                    raise RuntimeError(
+                        f"Element '{selector}' not found or not stable within {timeout_ms}ms"
+                    )
         else:
             found = await self.wait_for_selector(selector, timeout_ms=timeout_ms)
             if not found:
-                raise RuntimeError(f"Element '{selector}' not found for fill within {timeout_ms}ms")
+                raise RuntimeError(
+                    f"Element '{selector}' not found for fill within {timeout_ms}ms"
+                )
         return await self.evaluate(js)
 
     async def press_key(self, key: str) -> bool:
@@ -515,11 +681,16 @@ class CDPClient:
             ku = {"type": "keyUp", **key_def}
             await self.send("Input.dispatchKeyEvent", kd)
             if "text" in key_def:
-                await self.send("Input.dispatchKeyEvent", {"type": "char", "text": key_def["text"]})
+                await self.send(
+                    "Input.dispatchKeyEvent", {"type": "char", "text": key_def["text"]}
+                )
             await self.send("Input.dispatchKeyEvent", ku)
         else:
             for ch in key:
-                await self.send("Input.dispatchKeyEvent", {"type": "keyDown", "text": ch, "unmodifiedText": ch})
+                await self.send(
+                    "Input.dispatchKeyEvent",
+                    {"type": "keyDown", "text": ch, "unmodifiedText": ch},
+                )
                 await self.send("Input.dispatchKeyEvent", {"type": "keyUp"})
         return True
 
@@ -536,7 +707,9 @@ class CDPClient:
         }})()"""
         return await self.evaluate(js)
 
-    async def select_option(self, selector: str, value: str | None = None, text: str | None = None) -> bool:
+    async def select_option(
+        self, selector: str, value: str | None = None, text: str | None = None
+    ) -> bool:
         js = f"""(() => {{
             const el = document.querySelector({json.dumps(selector)});
             if (!el || el.tagName.toLowerCase() !== 'select') return false;
@@ -547,7 +720,7 @@ class CDPClient:
                     targetIdx = i;
                     break;
                 }}
-                if ({json.dumps(text)} !== null && opt.text.trim().toLowerCase() === {json.dumps(text or '')}.toLowerCase()) {{
+                if ({json.dumps(text)} !== null && opt.text.trim().toLowerCase() === {json.dumps(text or "")}.toLowerCase()) {{
                     targetIdx = i;
                     break;
                 }}
@@ -577,17 +750,21 @@ class CDPClient:
         })()"""
         return await self.evaluate(js)
 
-    async def set_viewport(self, width: int = 1280, height: int = 800, mobile: bool = False, device_scale_factor: float = 1.0) -> bool:
+    async def set_viewport(
+        self,
+        width: int = 1280,
+        height: int = 800,
+        mobile: bool = False,
+        device_scale_factor: float = 1.0,
+    ) -> bool:
         params = {
             "width": width,
             "height": height,
             "deviceScaleFactor": device_scale_factor,
-            "mobile": mobile
+            "mobile": mobile,
         }
         await self.send("Emulation.setDeviceMetricsOverride", params)
         return True
-
-
 
     async def set_user_agent(self, user_agent: str) -> bool:
         await self.send("Network.setUserAgentOverride", {"userAgent": user_agent})
@@ -603,7 +780,9 @@ class CDPClient:
 
     async def upload_file(self, selector: str, files: list[str]) -> bool:
         doc = await self.send("DOM.getDocument")
-        node_res = await self.send("DOM.querySelector", {"nodeId": doc["root"]["nodeId"], "selector": selector})
+        node_res = await self.send(
+            "DOM.querySelector", {"nodeId": doc["root"]["nodeId"], "selector": selector}
+        )
         node_id = node_res.get("nodeId")
         if not node_id:
             raise RuntimeError(f"File input '{selector}' not found in DOM")
@@ -613,11 +792,13 @@ class CDPClient:
     async def get_html(self) -> str:
         return await self.evaluate("document.documentElement.outerHTML")
 
-    async def print_to_pdf(self, landscape: bool = False, print_background: bool = True) -> str:
-        res = await self.send("Page.printToPDF", {
-            "landscape": landscape,
-            "printBackground": print_background
-        })
+    async def print_to_pdf(
+        self, landscape: bool = False, print_background: bool = True
+    ) -> str:
+        res = await self.send(
+            "Page.printToPDF",
+            {"landscape": landscape, "printBackground": print_background},
+        )
         return res.get("data", "")
 
     async def clear_cache(self) -> bool:
@@ -628,13 +809,21 @@ class CDPClient:
         await self.send("Network.clearBrowserCookies")
         return True
 
-    async def set_cookie(self, name: str, value: str, domain: str | None = None, path: str = "/", secure: bool = False, http_only: bool = False) -> bool:
+    async def set_cookie(
+        self,
+        name: str,
+        value: str,
+        domain: str | None = None,
+        path: str = "/",
+        secure: bool = False,
+        http_only: bool = False,
+    ) -> bool:
         params = {
             "name": name,
             "value": value,
             "path": path,
             "secure": secure,
-            "httpOnly": http_only
+            "httpOnly": http_only,
         }
         if domain:
             params["domain"] = domain
@@ -649,7 +838,7 @@ class CDPClient:
             res = await self.send("Network.getResponseBody", {"requestId": request_id})
             return {
                 "body": res.get("body", ""),
-                "base64Encoded": res.get("base64Encoded", False)
+                "base64Encoded": res.get("base64Encoded", False),
             }
         except Exception as e:
             return {"error": str(e)}
@@ -659,7 +848,13 @@ class CDPClient:
         res = await self.send("Network.getCookies", params)
         return res.get("cookies", [])
 
-    async def capture_screenshot(self, format: str = "png", quality: int | None = None, full_page: bool = False, clip_selector: str | None = None) -> str:
+    async def capture_screenshot(
+        self,
+        format: str = "png",
+        quality: int | None = None,
+        full_page: bool = False,
+        clip_selector: str | None = None,
+    ) -> str:
         params: dict[str, Any] = {"format": format}
         if quality is not None:
             params["quality"] = quality
@@ -672,7 +867,13 @@ class CDPClient:
             width = content_size.get("width")
             height = content_size.get("height")
             if width and height:
-                params["clip"] = {"x": 0, "y": 0, "width": width, "height": height, "scale": 1}
+                params["clip"] = {
+                    "x": 0,
+                    "y": 0,
+                    "width": width,
+                    "height": height,
+                    "scale": 1,
+                }
 
         elif clip_selector:
             rect = await self.evaluate(f"""(() => {{
@@ -687,7 +888,9 @@ class CDPClient:
         res = await self.send("Page.captureScreenshot", params)
         return res.get("data", "")
 
-    async def send_browser_cmd(self, method: str, params: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
+    async def send_browser_cmd(
+        self, method: str, params: dict[str, Any] | None = None, timeout: float = 10.0
+    ) -> dict[str, Any]:
         """Send a CDP command directly to the browser-level WebSocket endpoint."""
         ver_url = f"http://{self.host}:{self.port}/json/version"
         resp = await asyncio.to_thread(requests.get, ver_url, timeout=3)
@@ -695,11 +898,11 @@ class CDPClient:
         browser_ws_url = resp.json().get("webSocketDebuggerUrl")
         if not browser_ws_url:
             raise RuntimeError("No webSocketDebuggerUrl returned by /json/version")
-        
+
         self._browser_req_id += 1
         req_id = self._browser_req_id
         payload = {"id": req_id, "method": method, "params": params or {}}
-        
+
         async with websockets.connect(browser_ws_url, max_size=10 * 1024 * 1024) as ws:
             await ws.send(json.dumps(payload))
             t0 = asyncio.get_running_loop().time()
@@ -733,7 +936,9 @@ class CDPClient:
                 tid = pages[0]["id"]
             else:
                 raise RuntimeError("No target page available to get window bounds")
-        return await self.send_browser_cmd("Browser.getWindowForTarget", {"targetId": tid})
+        return await self.send_browser_cmd(
+            "Browser.getWindowForTarget", {"targetId": tid}
+        )
 
     async def set_window_bounds(
         self,
@@ -742,7 +947,7 @@ class CDPClient:
         height: int | None = None,
         left: int | None = None,
         top: int | None = None,
-        target_id: str | None = None
+        target_id: str | None = None,
     ) -> dict[str, Any]:
         """Set browser window state (normal, minimized, maximized, fullscreen) or resize/position bounds."""
         win_info = await self.get_window_bounds(target_id)
@@ -758,17 +963,22 @@ class CDPClient:
             bounds["left"] = left
         if top is not None:
             bounds["top"] = top
-        return await self.send_browser_cmd("Browser.setWindowBounds", {"windowId": window_id, "bounds": bounds})
+        return await self.send_browser_cmd(
+            "Browser.setWindowBounds", {"windowId": window_id, "bounds": bounds}
+        )
 
-    async def set_download_path(self, download_path: str, behavior: str = "allow") -> dict[str, Any]:
+    async def set_download_path(
+        self, download_path: str, behavior: str = "allow"
+    ) -> dict[str, Any]:
         """Configure browser download behavior and directory."""
-        return await self.send_browser_cmd("Browser.setDownloadBehavior", {
-            "behavior": behavior,
-            "downloadPath": download_path,
-            "eventsEnabled": True
-        })
-
-
+        return await self.send_browser_cmd(
+            "Browser.setDownloadBehavior",
+            {
+                "behavior": behavior,
+                "downloadPath": download_path,
+                "eventsEnabled": True,
+            },
+        )
 
     async def reset_permissions(self) -> dict[str, Any]:
         """Reset all browser permissions."""
@@ -786,19 +996,21 @@ class CDPClient:
             "version": "chrome://version",
             "gpu": "chrome://gpu",
             "net-internals": "chrome://net-internals",
-            "experiments": "chrome://flags"
+            "experiments": "chrome://flags",
         }
         page_key = name_or_url.strip().lower()
         target_url = system_map.get(page_key, name_or_url)
         if not target_url.startswith("chrome://") and not target_url.startswith("http"):
             target_url = f"chrome://{target_url}"
-        
+
         targets = await self.list_targets_async()
         for t in targets:
-            if t.get("type") == "page" and t.get("url", "").rstrip("/") == target_url.rstrip("/"):
+            if t.get("type") == "page" and t.get("url", "").rstrip(
+                "/"
+            ) == target_url.rstrip("/"):
                 await self.connect(t.get("id"))
                 return {"status": "switched", "target": t}
-        
+
         new_tab = await self.new_tab(target_url)
         await asyncio.sleep(0.5)
         await self.connect(new_tab.get("id"))
@@ -865,7 +1077,7 @@ class CDPClient:
                         "name": t.get("title") or ext_id,
                         "type": t.get("type"),
                         "url": url,
-                        "enabled": True
+                        "enabled": True,
                     }
         return list(ext_map.values())
 
@@ -879,7 +1091,7 @@ class CDPClient:
             await asyncio.sleep(0.3)
             await self.connect(tab.get("id"))
             return {"status": "opened", "url": url, "tab": tab}
-        
+
         temp_tab_id = None
         current_url = ""
         if self.is_connected:
@@ -917,8 +1129,6 @@ class CDPClient:
                 except Exception as e:
                     logger.debug(e)
 
-
-
     # Navigation & History
     async def go_back(self, delta: int = 1) -> dict[str, Any]:
         """Navigate backward in browser history."""
@@ -927,11 +1137,17 @@ class CDPClient:
         target_idx = curr_idx - delta
         entries = hist.get("entries", [])
         if target_idx < 0 or target_idx >= len(entries):
-            raise IndexError(f"Cannot go back {delta} step(s) (current index is {curr_idx})")
+            raise IndexError(
+                f"Cannot go back {delta} step(s) (current index is {curr_idx})"
+            )
         entry_id = entries[target_idx]["id"]
         await self.send("Page.navigateToHistoryEntry", {"entryId": entry_id})
         await self.wait_for_dom_ready()
-        return {"status": "ok", "url": entries[target_idx].get("url"), "title": entries[target_idx].get("title")}
+        return {
+            "status": "ok",
+            "url": entries[target_idx].get("url"),
+            "title": entries[target_idx].get("title"),
+        }
 
     async def go_forward(self, delta: int = 1) -> dict[str, Any]:
         """Navigate forward in browser history."""
@@ -940,29 +1156,39 @@ class CDPClient:
         target_idx = curr_idx + delta
         entries = hist.get("entries", [])
         if target_idx < 0 or target_idx >= len(entries):
-            raise IndexError(f"Cannot go forward {delta} step(s) (current index is {curr_idx}, total entries: {len(entries)})")
+            raise IndexError(
+                f"Cannot go forward {delta} step(s) (current index is {curr_idx}, total entries: {len(entries)})"
+            )
         entry_id = entries[target_idx]["id"]
         await self.send("Page.navigateToHistoryEntry", {"entryId": entry_id})
         await self.wait_for_dom_ready()
-        return {"status": "ok", "url": entries[target_idx].get("url"), "title": entries[target_idx].get("title")}
+        return {
+            "status": "ok",
+            "url": entries[target_idx].get("url"),
+            "title": entries[target_idx].get("title"),
+        }
 
     async def get_navigation_history(self) -> dict[str, Any]:
         """Retrieve full navigation history with current index and entries."""
         hist = await self.send("Page.getNavigationHistory")
         return {
             "current_index": hist.get("currentIndex", 0),
-            "entries": hist.get("entries", [])
+            "entries": hist.get("entries", []),
         }
 
     # Preload Scripts & Stealth
     async def add_preload_script(self, source: str) -> str:
         """Inject a JavaScript snippet to evaluate on every new document before page scripts."""
-        res = await self.send("Page.addScriptToEvaluateOnNewDocument", {"source": source})
+        res = await self.send(
+            "Page.addScriptToEvaluateOnNewDocument", {"source": source}
+        )
         return res.get("identifier", "")
 
     async def remove_preload_script(self, identifier: str) -> bool:
         """Remove a previously registered preload script by its identifier."""
-        await self.send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier})
+        await self.send(
+            "Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier}
+        )
         return True
 
     async def set_stealth_mode(self, enabled: bool = True) -> dict[str, Any]:
@@ -989,15 +1215,40 @@ class CDPClient:
         offline: bool | None = None,
         latency: int | None = None,
         download_throughput: int | None = None,
-        upload_throughput: int | None = None
+        upload_throughput: int | None = None,
     ) -> dict[str, Any]:
         """Emulate network conditions ('offline', 'slow3g', 'fast3g', '4g', 'none') or custom bandwidth."""
         profiles = {
-            "offline": {"offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0},
-            "slow3g": {"offline": False, "latency": 400, "downloadThroughput": (500 * 1024) // 8, "uploadThroughput": (500 * 1024) // 8},
-            "fast3g": {"offline": False, "latency": 150, "downloadThroughput": (1600 * 1024) // 8, "uploadThroughput": (750 * 1024) // 8},
-            "4g": {"offline": False, "latency": 20, "downloadThroughput": 10 * 1024 * 1024, "uploadThroughput": 5 * 1024 * 1024},
-            "none": {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1}
+            "offline": {
+                "offline": True,
+                "latency": 0,
+                "downloadThroughput": 0,
+                "uploadThroughput": 0,
+            },
+            "slow3g": {
+                "offline": False,
+                "latency": 400,
+                "downloadThroughput": (500 * 1024) // 8,
+                "uploadThroughput": (500 * 1024) // 8,
+            },
+            "fast3g": {
+                "offline": False,
+                "latency": 150,
+                "downloadThroughput": (1600 * 1024) // 8,
+                "uploadThroughput": (750 * 1024) // 8,
+            },
+            "4g": {
+                "offline": False,
+                "latency": 20,
+                "downloadThroughput": 10 * 1024 * 1024,
+                "uploadThroughput": 5 * 1024 * 1024,
+            },
+            "none": {
+                "offline": False,
+                "latency": 0,
+                "downloadThroughput": -1,
+                "uploadThroughput": -1,
+            },
         }
         prof_key = profile.lower()
         cfg = profiles.get(prof_key, profiles["none"]).copy()
@@ -1013,7 +1264,9 @@ class CDPClient:
         await self.send("Network.emulateNetworkConditions", cfg)
         return {"status": "ok", "profile": prof_key, "conditions": cfg}
 
-    async def set_ignore_certificate_errors(self, ignore: bool = True) -> dict[str, Any]:
+    async def set_ignore_certificate_errors(
+        self, ignore: bool = True
+    ) -> dict[str, Any]:
         """Bypass or enforce SSL/TLS certificate warnings on HTTPS websites."""
         await self.send("Security.setIgnoreCertificateErrors", {"ignore": ignore})
         return {"status": "ok", "ignore_certificate_errors": ignore}
@@ -1022,9 +1275,10 @@ class CDPClient:
     async def set_media_theme(self, theme: str = "dark") -> dict[str, Any]:
         """Emulate color scheme: 'dark', 'light', or 'no-preference'."""
         val = theme.lower()
-        await self.send("Emulation.setEmulatedMedia", {
-            "features": [{"name": "prefers-color-scheme", "value": val}]
-        })
+        await self.send(
+            "Emulation.setEmulatedMedia",
+            {"features": [{"name": "prefers-color-scheme", "value": val}]},
+        )
         return {"status": "ok", "theme": val}
 
     async def set_page_zoom(self, scale: float = 1.0) -> dict[str, Any]:
@@ -1120,7 +1374,9 @@ class CDPClient:
             return False
 
     # Find in Page
-    async def find_in_page(self, query: str, scroll_to_first: bool = True) -> dict[str, Any]:
+    async def find_in_page(
+        self, query: str, scroll_to_first: bool = True
+    ) -> dict[str, Any]:
         """Search text in page, returning match count and excerpts, and scroll to first match."""
         js = f"""(() => {{
             const query = {json.dumps(query)};
@@ -1194,7 +1450,9 @@ class CDPClient:
         return await self.evaluate(js)
 
     # Network Idle
-    async def wait_for_network_idle(self, idle_time: float = 0.5, timeout: float = 10.0) -> bool:
+    async def wait_for_network_idle(
+        self, idle_time: float = 0.5, timeout: float = 10.0
+    ) -> bool:
         """Wait until there are no active in-flight network requests for at least idle_time seconds."""
         t0 = asyncio.get_running_loop().time()
         while (asyncio.get_running_loop().time() - t0) < timeout:
@@ -1210,22 +1468,31 @@ class CDPClient:
         block_images: bool = False,
         block_media: bool = False,
         block_fonts: bool = False,
-        block_ads: bool = False
+        block_ads: bool = False,
     ) -> dict[str, Any]:
         """Block network resources by URL patterns or presets (images, media, fonts, ads)."""
         patterns = list(blocked_urls or [])
         if block_images:
-            patterns.extend(["*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.ico", "*.svg"])
+            patterns.extend(
+                ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.ico", "*.svg"]
+            )
         if block_media:
             patterns.extend(["*.mp4", "*.webm", "*.ogg", "*.mp3", "*.wav", "*.m3u8"])
         if block_fonts:
             patterns.extend(["*.woff", "*.woff2", "*.ttf", "*.otf", "*.eot"])
         if block_ads:
-            patterns.extend([
-                "*google-analytics.com*", "*googletagmanager.com*",
-                "*doubleclick.net*", "*facebook.net*", "*adnxs.com*",
-                "*hotjar.com*", "*clarity.ms*", "*yandex.ru/metrika*"
-            ])
+            patterns.extend(
+                [
+                    "*google-analytics.com*",
+                    "*googletagmanager.com*",
+                    "*doubleclick.net*",
+                    "*facebook.net*",
+                    "*adnxs.com*",
+                    "*hotjar.com*",
+                    "*clarity.ms*",
+                    "*yandex.ru/metrika*",
+                ]
+            )
         patterns = list(dict.fromkeys(patterns))  # Deduplicate preserving order
         await self.send("Network.setBlockedURLs", {"urls": patterns})
         return {"blocked": True, "count": len(patterns), "patterns": patterns}
@@ -1235,7 +1502,7 @@ class CDPClient:
         self,
         keep_current: bool = True,
         close_blank: bool = True,
-        url_patterns: list[str] | None = None
+        url_patterns: list[str] | None = None,
     ) -> dict[str, Any]:
         """Automatically close stale, blank, or pattern-matching tabs to free memory."""
         targets = self.list_targets()
@@ -1248,7 +1515,9 @@ class CDPClient:
                 continue
             url = t.get("url", "").lower()
             should_close = False
-            if close_blank and (url in ("about:blank", "chrome://newtab/", "") or not url):
+            if close_blank and (
+                url in ("about:blank", "chrome://newtab/", "") or not url
+            ):
                 should_close = True
             if url_patterns:
                 for pat in url_patterns:
@@ -1258,7 +1527,9 @@ class CDPClient:
             if should_close and tid:
                 try:
                     self.close_tab_sync(tid)
-                    closed.append({"id": tid, "url": t.get("url"), "title": t.get("title")})
+                    closed.append(
+                        {"id": tid, "url": t.get("url"), "title": t.get("title")}
+                    )
                 except Exception as e:
                     logger.debug(e)
         return {"closed_count": len(closed), "closed_tabs": closed}
@@ -1267,10 +1538,12 @@ class CDPClient:
         self,
         keep_current: bool = True,
         close_blank: bool = True,
-        url_patterns: list[str] | None = None
+        url_patterns: list[str] | None = None,
     ) -> dict[str, Any]:
         """Asynchronously close stale, blank, or pattern-matching tabs without blocking the event loop."""
-        return await asyncio.to_thread(self.cleanup_tabs, keep_current, close_blank, url_patterns)
+        return await asyncio.to_thread(
+            self.cleanup_tabs, keep_current, close_blank, url_patterns
+        )
 
     # Performance & Memory Metrics
     async def get_performance_metrics(self) -> dict[str, Any]:
@@ -1280,7 +1553,7 @@ class CDPClient:
         metrics_dict = {}
         for m in raw.get("metrics", []):
             metrics_dict[m.get("name")] = m.get("value")
-        
+
         heap_used = metrics_dict.get("JSHeapUsedSize", 0)
         heap_total = metrics_dict.get("JSHeapTotalSize", 0)
         return {
@@ -1290,18 +1563,24 @@ class CDPClient:
             "documents": int(metrics_dict.get("Documents", 0)),
             "layouts": int(metrics_dict.get("LayoutCount", 0)),
             "task_duration_s": round(metrics_dict.get("TaskDuration", 0), 3),
-            "raw_metrics": metrics_dict
+            "raw_metrics": metrics_dict,
         }
 
     # Geolocation Emulation
-    async def set_geolocation(self, latitude: float, longitude: float, accuracy: float = 1.0) -> dict[str, Any]:
+    async def set_geolocation(
+        self, latitude: float, longitude: float, accuracy: float = 1.0
+    ) -> dict[str, Any]:
         """Override device geolocation coordinates."""
-        await self.send("Emulation.setGeolocationOverride", {
+        await self.send(
+            "Emulation.setGeolocationOverride",
+            {"latitude": latitude, "longitude": longitude, "accuracy": accuracy},
+        )
+        return {
+            "success": True,
             "latitude": latitude,
             "longitude": longitude,
-            "accuracy": accuracy
-        })
-        return {"success": True, "latitude": latitude, "longitude": longitude, "accuracy": accuracy}
+            "accuracy": accuracy,
+        }
 
     # Timezone Emulation
     async def set_timezone(self, timezone_id: str) -> dict[str, Any]:
@@ -1310,7 +1589,9 @@ class CDPClient:
         return {"success": True, "timezoneId": timezone_id}
 
     # Permissions
-    async def grant_permissions(self, permissions: list[str], origin: str | None = None) -> dict[str, Any]:
+    async def grant_permissions(
+        self, permissions: list[str], origin: str | None = None
+    ) -> dict[str, Any]:
         """Grant browser permissions (e.g. 'geolocation', 'notifications', 'clipboardReadWrite')."""
         if not origin:
             origin = await self.evaluate("window.location.origin")
@@ -1321,12 +1602,22 @@ class CDPClient:
         return {"success": True, "permissions": permissions, "origin": origin}
 
     # Universal Raw CDP Method (God Mode)
-    async def send_cdp(self, method: str, params: dict[str, Any] | None = None, timeout: float = 10.0, session_id: str | None = None) -> dict[str, Any]:
+    async def send_cdp(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        timeout: float = 10.0,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         """Send any raw Chrome DevTools Protocol command directly."""
-        return await self.send(method, params or {}, timeout=timeout, session_id=session_id)
+        return await self.send(
+            method, params or {}, timeout=timeout, session_id=session_id
+        )
 
     # CSS Styles Inspection
-    async def get_css_styles(self, selector: str | None = None, ref: str | None = None) -> dict[str, Any]:
+    async def get_css_styles(
+        self, selector: str | None = None, ref: str | None = None
+    ) -> dict[str, Any]:
         """Inspect computed CSS styles and matched rules for an element."""
         session_id = None
         if ref:
@@ -1381,7 +1672,9 @@ class CDPClient:
         }})()"""
         res = await self.evaluate(js, session_id=session_id)
         if not res:
-            raise RuntimeError(f"Element not found for CSS style inspection (selector={selector}, ref={ref})")
+            raise RuntimeError(
+                f"Element not found for CSS style inspection (selector={selector}, ref={ref})"
+            )
         return res
 
     # Isolated Browser Context (Incognito)
@@ -1389,15 +1682,14 @@ class CDPClient:
         """Create a new tab in a fresh, fully isolated browser context (incognito)."""
         ctx = await self.send_browser_cmd("Target.createBrowserContext")
         browser_context_id = ctx.get("browserContextId")
-        target = await self.send_browser_cmd("Target.createTarget", {
-            "url": url,
-            "browserContextId": browser_context_id
-        })
+        target = await self.send_browser_cmd(
+            "Target.createTarget", {"url": url, "browserContextId": browser_context_id}
+        )
         return {
             "target_id": target.get("targetId"),
             "browser_context_id": browser_context_id,
             "url": url,
-            "isolated": True
+            "isolated": True,
         }
 
     # CPU Throttling
@@ -1407,12 +1699,16 @@ class CDPClient:
         return {"rate": rate, "throttled": rate > 1.0}
 
     # Dialog Management
-    def set_dialog_behavior(self, action: str = "accept", prompt_text: str | None = None):
+    def set_dialog_behavior(
+        self, action: str = "accept", prompt_text: str | None = None
+    ):
         """Configure auto-response behavior for future JavaScript dialogs."""
         self.dialog_action = action
         self.dialog_prompt_text = prompt_text
 
-    async def handle_dialog(self, action: str = "accept", prompt_text: str | None = None) -> dict[str, Any]:
+    async def handle_dialog(
+        self, action: str = "accept", prompt_text: str | None = None
+    ) -> dict[str, Any]:
         """Handle active JavaScript dialog with custom action and prompt text."""
         d_params: dict[str, Any] = {"accept": action.lower() == "accept"}
         if prompt_text is not None:
@@ -1423,26 +1719,42 @@ class CDPClient:
     async def start_screencast(self, file_path: str, format: str = "jpeg") -> dict:
         if getattr(self, "_screencast_process", None):
             raise RuntimeError("Screencast is already running.")
-        
+
         self._screencast_process = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-f", "image2pipe", "-vcodec", "mjpeg" if format == "jpeg" else "png",
-            "-r", "15", "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", file_path,
+            "ffmpeg",
+            "-y",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg" if format == "jpeg" else "png",
+            "-r",
+            "15",
+            "-i",
+            "-",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            file_path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        
-        return await self.send_cdp("Page.startScreencast", {"format": format, "quality": 80, "everyNthFrame": 1})
+
+        return await self.send_cdp(
+            "Page.startScreencast",
+            {"format": format, "quality": 80, "everyNthFrame": 1},
+        )
 
     async def stop_screencast(self) -> dict:
         if not getattr(self, "_screencast_process", None):
             raise RuntimeError("No screencast is currently running.")
-        
+
         await self.send_cdp("Page.stopScreencast")
-        
+
         if self._screencast_process:
             self._screencast_process.stdin.close()
             await self._screencast_process.wait()
             self._screencast_process = None
-        
+
         return {"status": "stopped"}

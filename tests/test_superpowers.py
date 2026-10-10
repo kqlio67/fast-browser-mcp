@@ -8,8 +8,8 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestSuperpowers(BaseBrowserTest):
 
+class TestSuperpowers(BaseBrowserTest):
     def test_navigation_history(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
@@ -17,6 +17,7 @@ class TestSuperpowers(BaseBrowserTest):
             self.assertIn("current_index", hist)
             self.assertIn("entries", hist)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_stealth_mode(self):
@@ -27,6 +28,7 @@ class TestSuperpowers(BaseBrowserTest):
             val = await self.cdp.evaluate("navigator.webdriver")
             self.assertIsNone(val)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_network_throttling(self):
@@ -37,6 +39,7 @@ class TestSuperpowers(BaseBrowserTest):
             # Reset
             await self.cdp.set_network_throttling(profile="none")
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_media_theme_and_zoom(self):
@@ -49,6 +52,7 @@ class TestSuperpowers(BaseBrowserTest):
             self.assertEqual(zoom_res.get("scale"), 1.25)
             await self.cdp.set_page_zoom(scale=1.0)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_audio_muted(self):
@@ -58,6 +62,7 @@ class TestSuperpowers(BaseBrowserTest):
             self.assertTrue(res.get("muted"))
             await self.cdp.set_audio_muted(muted=False)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_clipboard(self):
@@ -68,19 +73,25 @@ class TestSuperpowers(BaseBrowserTest):
             text = await self.cdp.get_clipboard_text()
             self.assertIsInstance(text, str)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_find_in_page(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
             # inject known text to body
-            await self.cdp.evaluate("(() => { const p = document.createElement('p'); p.id = '__test_find_p'; p.textContent = 'UniqueSuperSearchToken42'; document.body.appendChild(p); })()")
+            await self.cdp.evaluate(
+                "(() => { const p = document.createElement('p'); p.id = '__test_find_p'; p.textContent = 'UniqueSuperSearchToken42'; document.body.appendChild(p); })()"
+            )
             res = await self.cdp.find_in_page(query="UniqueSuperSearchToken42")
             self.assertTrue(res.get("found"))
             self.assertGreater(res.get("count", 0), 0)
             # cleanup
-            await self.cdp.evaluate("(() => { const el = document.getElementById('__test_find_p'); if (el) el.remove(); })()")
+            await self.cdp.evaluate(
+                "(() => { const el = document.getElementById('__test_find_p'); if (el) el.remove(); })()"
+            )
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_indexeddb_data(self):
@@ -90,6 +101,7 @@ class TestSuperpowers(BaseBrowserTest):
             self.assertIn("supported", res)
             self.assertIn("databases", res)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_batch_superpowers_actions(self):
@@ -100,13 +112,15 @@ class TestSuperpowers(BaseBrowserTest):
                 {"action": "stealth", "enabled": True},
                 {"action": "theme", "theme": "dark"},
                 {"action": "zoom", "scale": 1.0},
-                {"action": "history"}
+                {"action": "history"},
             ]
             res = await batch.execute(steps)
             self.assertTrue(res["success"])
             self.assertEqual(res["steps_executed"], 4)
             await self.cdp.close()
+
         asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

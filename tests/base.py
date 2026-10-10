@@ -30,13 +30,13 @@ class TestBrowserManager:
             cls._port = s.getsockname()[1]
 
         cls._tmpdir = tempfile.mkdtemp(prefix="fast_browser_test_")
-        
+
         browser_bin = None
         for b in ["google-chrome", "chromium", "chromium-browser"]:
             if shutil.which(b):
                 browser_bin = b
                 break
-        
+
         if not browser_bin:
             cls._port = 9222
             return cls._port
@@ -53,13 +53,11 @@ class TestBrowserManager:
             "--disable-sync",
             "--disable-default-apps",
             "--mute-audio",
-            "about:blank"
+            "about:blank",
         ]
 
         cls._proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
         url = f"http://127.0.0.1:{cls._port}/json/version"
@@ -79,7 +77,9 @@ class TestBrowserManager:
         if not ready:
             proc_status = f"exit_code={cls._proc.poll() if cls._proc else 'N/A'}"
             cls.cleanup()
-            raise RuntimeError(f"Failed to start isolated headless test browser on port {cls._port} ({proc_status})")
+            raise RuntimeError(
+                f"Failed to start isolated headless test browser on port {cls._port} ({proc_status})"
+            )
 
         os.environ["CDP_PORT"] = str(cls._port)
         atexit.register(cls.cleanup)

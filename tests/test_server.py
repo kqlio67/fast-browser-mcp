@@ -13,11 +13,19 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
     """Test the integrity and schema validation of tool definitions and handler registry."""
 
     def test_tool_count_and_exact_match(self):
-        self.assertEqual(len(TOOLS), 64, "Expected exactly 64 registered tools in TOOLS")
-        self.assertEqual(len(TOOL_REGISTRY), 64, "Expected exactly 64 registered handlers in TOOL_REGISTRY")
+        self.assertEqual(
+            len(TOOLS), 69, "Expected exactly 69 registered tools in TOOLS"
+        )
+        self.assertEqual(
+            len(TOOL_REGISTRY),
+            69,
+            "Expected exactly 69 registered handlers in TOOL_REGISTRY",
+        )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())
-        self.assertEqual(tools_names, registry_names, f"Difference: {tools_names ^ registry_names}")
+        self.assertEqual(
+            tools_names, registry_names, f"Difference: {tools_names ^ registry_names}"
+        )
 
     def test_tool_schemas(self):
         for tool_def in TOOLS:
@@ -31,16 +39,31 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
 
     def test_connection_requirements(self):
         # Tabs management tools should not require existing CDP active connection
-        no_conn_tools = {"browser_list_tabs", "browser_select_tab", "browser_new_tab", "browser_close_tab"}
+        no_conn_tools = {
+            "browser_list_tabs",
+            "browser_select_tab",
+            "browser_new_tab",
+            "browser_close_tab",
+        }
         for name in no_conn_tools:
             handler_info = TOOL_REGISTRY[name]
-            self.assertFalse(handler_info.requires_connection, f"{name} should not require connection")
+            self.assertFalse(
+                handler_info.requires_connection,
+                f"{name} should not require connection",
+            )
 
         # Interactive tools should require connection
-        conn_tools = {"browser_snapshot", "browser_batch", "browser_click", "browser_eval"}
+        conn_tools = {
+            "browser_snapshot",
+            "browser_batch",
+            "browser_click",
+            "browser_eval",
+        }
         for name in conn_tools:
             handler_info = TOOL_REGISTRY[name]
-            self.assertTrue(handler_info.requires_connection, f"{name} should require connection")
+            self.assertTrue(
+                handler_info.requires_connection, f"{name} should require connection"
+            )
 
 
 class TestServerPathSandboxing(unittest.TestCase):
@@ -54,6 +77,7 @@ class TestServerPathSandboxing(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_path_inside_sandbox_allowed(self):
@@ -116,7 +140,9 @@ class TestServerStdioTransport(unittest.IsolatedAsyncioTestCase):
     async def test_read_message_content_length_framing(self):
         server = MCPServer()
         reader = asyncio.StreamReader()
-        payload = json.dumps({"jsonrpc": "2.0", "id": 42, "method": "initialize"}).encode("utf-8")
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": 42, "method": "initialize"}
+        ).encode("utf-8")
         header = f"Content-Length: {len(payload)}\r\n\r\n".encode()
         reader.feed_data(header + payload)
         reader.feed_eof()
@@ -130,7 +156,7 @@ class TestServerStdioTransport(unittest.IsolatedAsyncioTestCase):
     async def test_read_message_malformed_json_recovery(self):
         server = MCPServer()
         reader = asyncio.StreamReader()
-        reader.feed_data(b'MALFORMED JSON LINE\n')
+        reader.feed_data(b"MALFORMED JSON LINE\n")
         reader.feed_data(b'{"jsonrpc": "2.0", "id": 2, "method": "ping"}\n')
         reader.feed_eof()
 
@@ -173,10 +199,22 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Unknown tool", str(ctx.exception))
 
     async def test_handle_call_list_tabs(self):
-        self.server.cdp.list_targets_async = AsyncMock(return_value=[
-            {"id": "t1", "title": "Tab One", "url": "https://example.com", "type": "page"},
-            {"id": "bg1", "title": "ServiceWorker", "url": "chrome-extension://xyz", "type": "service_worker"}
-        ])
+        self.server.cdp.list_targets_async = AsyncMock(
+            return_value=[
+                {
+                    "id": "t1",
+                    "title": "Tab One",
+                    "url": "https://example.com",
+                    "type": "page",
+                },
+                {
+                    "id": "bg1",
+                    "title": "ServiceWorker",
+                    "url": "chrome-extension://xyz",
+                    "type": "service_worker",
+                },
+            ]
+        )
         res_str = await self.server.handle_call("browser_list_tabs", {})
         res = json.loads(res_str)
         self.assertEqual(len(res), 1)
@@ -185,7 +223,9 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_navigate(self):
         self.server.cdp.navigate = AsyncMock(return_value={"status": "ok"})
-        res = await self.server.handle_call("browser_navigate", {"url": "https://anthropic.com"})
+        res = await self.server.handle_call(
+            "browser_navigate", {"url": "https://anthropic.com"}
+        )
         self.assertIn("Navigated to https://anthropic.com", res)
         self.server.cdp.navigate.assert_awaited_once_with("https://anthropic.com")
 
@@ -197,11 +237,44 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         self.server.cdp.evaluate.assert_awaited_once_with("21 + 21")
 
     async def test_handle_call_dialog(self):
-        self.server.cdp.handle_dialog = AsyncMock(return_value={"status": "dialog_handled", "action": "accept"})
-        res_str = await self.server.handle_call("browser_handle_dialog", {"action": "accept", "prompt_text": "hello"})
+        self.server.cdp.handle_dialog = AsyncMock(
+            return_value={"status": "dialog_handled", "action": "accept"}
+        )
+        res_str = await self.server.handle_call(
+            "browser_handle_dialog", {"action": "accept", "prompt_text": "hello"}
+        )
         res = json.loads(res_str)
         self.assertEqual(res["status"], "dialog_handled")
-        self.server.cdp.handle_dialog.assert_awaited_once_with(action="accept", prompt_text="hello")
+        self.server.cdp.handle_dialog.assert_awaited_once_with(
+            action="accept", prompt_text="hello"
+        )
+
+    async def test_handle_call_screencast(self):
+        self.server.cdp.start_screencast = AsyncMock()
+        self.server.cdp.stop_screencast = AsyncMock()
+        # Mock validate_path to just return the passed path for testing
+        self.server.validate_path = MagicMock(return_value="/tmp/out.mp4")
+
+        await self.server.handle_call(
+            "browser_screencast_start", {"file_path": "/tmp/out.mp4"}
+        )
+        self.server.cdp.start_screencast.assert_awaited_once_with("/tmp/out.mp4")
+
+        await self.server.handle_call("browser_screencast_stop", {})
+        self.server.cdp.stop_screencast.assert_awaited_once()
+
+    async def test_handle_call_webmcp(self):
+        self.server.cdp.evaluate = AsyncMock(return_value={"tools": ["test_tool"]})
+        res_str = await self.server.handle_call("browser_list_webmcp_tools", {})
+        res = json.loads(res_str)
+        self.assertEqual(res["tools"], ["test_tool"])
+
+        self.server.cdp.evaluate = AsyncMock(return_value={"result": "ok"})
+        res_str = await self.server.handle_call(
+            "browser_execute_webmcp_tool", {"name": "test_tool", "arguments": {"a": 1}}
+        )
+        res = json.loads(res_str)
+        self.assertEqual(res["result"], "ok")
 
 
 if __name__ == "__main__":

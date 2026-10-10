@@ -9,19 +9,21 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestFastBrowser(BaseBrowserTest):
 
+class TestFastBrowser(BaseBrowserTest):
     def test_list_targets(self):
         targets = self.cdp.list_targets()
         self.assertIsInstance(targets, list)
-        self.assertGreater(len(targets), 0, "Should find running browser targets on port 9222")
+        self.assertGreater(
+            len(targets), 0, "Should find running browser targets on port 9222"
+        )
 
     def test_snapshot_and_eval(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
             title = await self.cdp.evaluate("document.title")
             self.assertIsInstance(title, str)
-            
+
             snap = PageSnapshot(self.cdp)
             text = await snap.capture_formatted()
             self.assertIn("Page:", text)
@@ -36,7 +38,7 @@ class TestFastBrowser(BaseBrowserTest):
             steps = [
                 {"action": "eval", "script": "1 + 1"},
                 {"action": "scroll", "delta_y": 50},
-                {"action": "wait", "ms": 20}
+                {"action": "wait", "ms": 20},
             ]
             res = await batch.execute(steps)
             self.assertTrue(res["success"])
@@ -45,6 +47,7 @@ class TestFastBrowser(BaseBrowserTest):
             await self.cdp.close()
 
         asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,8 +1,9 @@
 import json
 import time
-import aiofiles
 from collections import deque
 from typing import Any
+
+import aiofiles
 
 
 class ConsoleMonitor:
@@ -25,18 +26,20 @@ class ConsoleMonitor:
                     text_parts.append(a.get("description"))
                 else:
                     text_parts.append(str(a))
-            
+
             text = " ".join(text_parts)
             stack = params.get("stackTrace", {}).get("callFrames", [])
             source = stack[0].get("url", "") if stack else ""
             line = stack[0].get("lineNumber", "") if stack else ""
 
-            self.logs.append({
-                "timestamp": t,
-                "type": log_type,
-                "message": text[:2000],
-                "source": f"{source}:{line}" if source else ""
-            })
+            self.logs.append(
+                {
+                    "timestamp": t,
+                    "type": log_type,
+                    "message": text[:2000],
+                    "source": f"{source}:{line}" if source else "",
+                }
+            )
 
         elif method == "Runtime.exceptionThrown":
             exc = params.get("exceptionDetails", {})
@@ -45,14 +48,18 @@ class ConsoleMonitor:
             url = exc.get("url", "")
             line = exc.get("lineNumber", "")
 
-            self.logs.append({
-                "timestamp": t,
-                "type": "error",
-                "message": desc[:2000],
-                "source": f"{url}:{line}" if url else ""
-            })
+            self.logs.append(
+                {
+                    "timestamp": t,
+                    "type": "error",
+                    "message": desc[:2000],
+                    "source": f"{url}:{line}" if url else "",
+                }
+            )
 
-    def list_logs(self, log_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_logs(
+        self, log_type: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         results = []
         for log in reversed(self.logs):
             if log_type and log_type.lower() != "all":
@@ -69,6 +76,7 @@ class ConsoleMonitor:
 
 class InFlightTracker(dict):
     """Tracks active requests with start timestamps while supporting set-like operations."""
+
     def add(self, item: str):
         self[item] = time.time()
 
@@ -87,13 +95,22 @@ class NetworkMonitor:
         self.in_flight_requests = InFlightTracker()
         self.last_activity_time: float = time.time()
 
-    def is_network_idle(self, idle_time: float = 0.5, timeout_ttl: float = 20.0) -> bool:
+    def is_network_idle(
+        self, idle_time: float = 0.5, timeout_ttl: float = 20.0
+    ) -> bool:
         now = time.time()
         if self.in_flight_requests:
-            expired = [rid for rid, start_t in list(self.in_flight_requests.items()) if (now - start_t) > timeout_ttl]
+            expired = [
+                rid
+                for rid, start_t in list(self.in_flight_requests.items())
+                if (now - start_t) > timeout_ttl
+            ]
             for rid in expired:
                 self.in_flight_requests.discard(rid)
-        return len(self.in_flight_requests) == 0 and (now - self.last_activity_time) >= idle_time
+        return (
+            len(self.in_flight_requests) == 0
+            and (now - self.last_activity_time) >= idle_time
+        )
 
     def handle_event(self, method: str, params: dict[str, Any]):
         t = time.strftime("%H:%M:%S")
@@ -126,7 +143,7 @@ class NetworkMonitor:
                 "status": None,
                 "statusText": None,
                 "responseHeaders": {},
-                "mimeType": None
+                "mimeType": None,
             }
             if "redirectResponse" in params:
                 entry["redirected_from"] = params["redirectResponse"].get("url")
@@ -158,50 +175,63 @@ class NetworkMonitor:
             if len(self.ws_connections) > 200:
                 self.ws_connections.clear()
             self.ws_connections[req_id] = url
-            self.ws_frames.append({
-                "timestamp": t,
-                "type": "connect",
-                "url": url,
-                "direction": "system",
-                "data": f"Connected to {url}"
-            })
+            self.ws_frames.append(
+                {
+                    "timestamp": t,
+                    "type": "connect",
+                    "url": url,
+                    "direction": "system",
+                    "data": f"Connected to {url}",
+                }
+            )
 
         elif method == "Network.webSocketFrameSent":
             req_id = str(params.get("requestId", ""))
             resp = params.get("response", {})
             data = resp.get("payloadData", "")
-            self.ws_frames.append({
-                "timestamp": t,
-                "type": "frame",
-                "url": self.ws_connections.get(req_id, "unknown"),
-                "direction": "sent",
-                "data": data[:2000]
-            })
+            self.ws_frames.append(
+                {
+                    "timestamp": t,
+                    "type": "frame",
+                    "url": self.ws_connections.get(req_id, "unknown"),
+                    "direction": "sent",
+                    "data": data[:2000],
+                }
+            )
 
         elif method == "Network.webSocketFrameReceived":
             req_id = str(params.get("requestId", ""))
             resp = params.get("response", {})
             data = resp.get("payloadData", "")
-            self.ws_frames.append({
-                "timestamp": t,
-                "type": "frame",
-                "url": self.ws_connections.get(req_id, "unknown"),
-                "direction": "received",
-                "data": data[:2000]
-            })
+            self.ws_frames.append(
+                {
+                    "timestamp": t,
+                    "type": "frame",
+                    "url": self.ws_connections.get(req_id, "unknown"),
+                    "direction": "received",
+                    "data": data[:2000],
+                }
+            )
 
         elif method == "Network.webSocketClosed":
             req_id = str(params.get("requestId", ""))
             url = self.ws_connections.pop(req_id, "unknown")
-            self.ws_frames.append({
-                "timestamp": t,
-                "type": "disconnect",
-                "url": url,
-                "direction": "system",
-                "data": f"WebSocket closed: {url}"
-            })
+            self.ws_frames.append(
+                {
+                    "timestamp": t,
+                    "type": "disconnect",
+                    "url": url,
+                    "direction": "system",
+                    "data": f"WebSocket closed: {url}",
+                }
+            )
 
-    def list_requests(self, filter_type: str | None = None, url_pattern: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_requests(
+        self,
+        filter_type: str | None = None,
+        url_pattern: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
         results = []
         for req_id in reversed(self.ordered_requests):
             req = self.requests.get(req_id)
@@ -212,16 +242,18 @@ class NetworkMonitor:
                     continue
             if url_pattern and url_pattern.lower() not in req.get("url", "").lower():
                 continue
-            
-            results.append({
-                "id": req["id"],
-                "time": req["timestamp"],
-                "method": req["method"],
-                "type": req["type"],
-                "status": req["status"],
-                "url": req["url"],
-                "has_post_data": bool(req.get("postData"))
-            })
+
+            results.append(
+                {
+                    "id": req["id"],
+                    "time": req["timestamp"],
+                    "method": req["method"],
+                    "type": req["type"],
+                    "status": req["status"],
+                    "url": req["url"],
+                    "has_post_data": bool(req.get("postData")),
+                }
+            )
             if len(results) >= limit:
                 break
         return results
@@ -229,7 +261,9 @@ class NetworkMonitor:
     def get_request_details(self, req_id: str) -> dict[str, Any] | None:
         return self.requests.get(req_id)
 
-    def list_ws_frames(self, direction: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_ws_frames(
+        self, direction: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         results = []
         for frame in reversed(self.ws_frames):
             if direction and frame.get("direction") != direction:
@@ -245,7 +279,7 @@ class NetworkMonitor:
             "total_requests": len(self.requests),
             "total_ws_frames": len(self.ws_frames),
             "requests": list(self.requests.values()),
-            "websocket_frames": list(self.ws_frames)
+            "websocket_frames": list(self.ws_frames),
         }
 
     async def export_to_file(self, file_path: str):

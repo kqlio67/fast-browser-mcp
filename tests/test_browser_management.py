@@ -9,8 +9,8 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestBrowserManagement(BaseBrowserTest):
 
+class TestBrowserManagement(BaseBrowserTest):
     def test_browser_version(self):
         ver = self.cdp.get_browser_version()
         self.assertIn("Browser", ver)
@@ -25,6 +25,7 @@ class TestBrowserManagement(BaseBrowserTest):
             self.assertIn("windowState", b)
             self.assertIn("width", b)
             self.assertIn("height", b)
+
         asyncio.run(run())
 
     def test_list_extensions(self):
@@ -35,6 +36,7 @@ class TestBrowserManagement(BaseBrowserTest):
                 self.assertIn("id", exts[0])
                 self.assertIn("name", exts[0])
                 self.assertIn("enabled", exts[0])
+
         asyncio.run(run())
 
     def test_system_page_and_snapshot(self):
@@ -49,6 +51,7 @@ class TestBrowserManagement(BaseBrowserTest):
             finally:
                 if tab_res.get("status") == "opened" and tid:
                     await self.cdp.close_tab(tid)
+
         asyncio.run(run())
 
     def test_batch_browser_management(self):
@@ -58,10 +61,7 @@ class TestBrowserManagement(BaseBrowserTest):
             try:
                 await self.cdp.connect(target_id=tid)
                 batch = BatchRunner(self.cdp)
-                steps = [
-                    {"action": "system_info"},
-                    {"action": "window"}
-                ]
+                steps = [{"action": "system_info"}, {"action": "window"}]
                 res = await batch.execute(steps)
                 self.assertTrue(res["success"])
                 self.assertEqual(res["steps_executed"], 2)
@@ -71,7 +71,9 @@ class TestBrowserManagement(BaseBrowserTest):
             finally:
                 if tid:
                     self.cdp.close_tab_sync(tid)
+
         asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,8 +9,8 @@ try:
 except ImportError:
     from base import BaseBrowserTest
 
-class TestResilience(BaseBrowserTest):
 
+class TestResilience(BaseBrowserTest):
     def test_element_stability_and_autowait(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
@@ -21,12 +21,15 @@ class TestResilience(BaseBrowserTest):
                 btn.textContent = 'Stable Button';
                 document.body.appendChild(btn);
             })()""")
-            stable = await self.cdp.wait_for_element_stable("#test-stable-btn", timeout_ms=2000)
+            stable = await self.cdp.wait_for_element_stable(
+                "#test-stable-btn", timeout_ms=2000
+            )
             self.assertTrue(stable)
             # Click with wait_stable=True
             ok = await self.cdp.click("#test-stable-btn", wait_stable=True)
             self.assertTrue(ok)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_network_idle(self):
@@ -35,6 +38,7 @@ class TestResilience(BaseBrowserTest):
             is_idle = await self.cdp.wait_for_network_idle(idle_time=0.2, timeout=3.0)
             self.assertTrue(is_idle)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_scoped_and_viewport_snapshot(self):
@@ -52,7 +56,7 @@ class TestResilience(BaseBrowserTest):
                 document.body.appendChild(c);
             })()""")
             snap = PageSnapshot(self.cdp)
-            
+
             # 1. Scoped snapshot
             res = await snap.capture(selector="#container-scope")
             self.assertEqual(res["root"], "#container-scope")
@@ -64,9 +68,12 @@ class TestResilience(BaseBrowserTest):
             self.assertTrue(res_trunc["truncated"])
 
             # 3. Formatted snapshot
-            text = await snap.capture_formatted(selector="#container-scope", in_viewport=True)
+            text = await snap.capture_formatted(
+                selector="#container-scope", in_viewport=True
+            )
             self.assertIn("Btn 1", text)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_resource_blocker(self):
@@ -79,6 +86,7 @@ class TestResilience(BaseBrowserTest):
             # Reset
             await self.cdp.block_resources(blocked_urls=[])
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_performance_metrics(self):
@@ -90,6 +98,7 @@ class TestResilience(BaseBrowserTest):
             self.assertIn("layouts", metrics)
             self.assertGreaterEqual(metrics["dom_nodes"], 0)
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_geolocation_and_timezone(self):
@@ -103,20 +112,23 @@ class TestResilience(BaseBrowserTest):
             # Timezone
             tz = await self.cdp.set_timezone("Europe/Kyiv")
             self.assertTrue(tz["success"])
-            actual_tz = await self.cdp.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
+            actual_tz = await self.cdp.evaluate(
+                "Intl.DateTimeFormat().resolvedOptions().timeZone"
+            )
             self.assertIn(actual_tz, ("Europe/Kyiv", "Europe/Kiev"))
             await self.cdp.close()
+
         asyncio.run(run())
 
     def test_tab_cleanup(self):
         async def run():
             # Open extra tab
             temp_tab = self.cdp.new_tab_sync("about:blank")
-            tid = temp_tab["id"]
-            
+
             res = self.cdp.cleanup_tabs(keep_current=True, close_blank=True)
             self.assertIn("closed_count", res)
             self.assertIn("closed_tabs", res)
+
         asyncio.run(run())
 
     def test_batch_resilience_actions(self):
@@ -128,7 +140,7 @@ class TestResilience(BaseBrowserTest):
                 {"action": "block_resources", "images": True, "ads": True},
                 {"action": "timezone", "timezone": "Europe/Kyiv"},
                 {"action": "metrics"},
-                {"action": "snapshot", "in_viewport": True, "max_elements": 10}
+                {"action": "snapshot", "in_viewport": True, "max_elements": 10},
             ]
             res = await batch.execute(steps)
             self.assertTrue(res["success"])
@@ -136,7 +148,9 @@ class TestResilience(BaseBrowserTest):
             self.assertIn("metrics", res["results"][3])
             self.assertIn("snapshot", res["results"][4])
             await self.cdp.close()
+
         asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()
