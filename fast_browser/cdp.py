@@ -10,7 +10,10 @@ import websockets
 try:
     from websockets.protocol import State as WsState
 except ImportError:
-    WsState = getattr(websockets, "State", None)
+    try:
+        from websockets import State as WsState  # type: ignore[no-redef]
+    except ImportError:
+        WsState = None  # type: ignore[assignment, misc]
 from typing import Any
 
 from .network import ConsoleMonitor, NetworkMonitor
@@ -50,12 +53,14 @@ class CDPClient:
         )
         self.ws_url: str | None = None
         self.target_id: str | None = None
-        self._ws: websockets.WebSocketClientProtocol | None = None
+        self._ws: Any = None
         self._req_id = 0
         self._browser_req_id = 0
         self._pending_requests: dict[int, asyncio.Future] = {}
         self._listen_task: asyncio.Task | None = None
         self._connect_lock: asyncio.Lock | None = None
+        self._screencast_process: asyncio.subprocess.Process | None = None
+        self.managed_browser: Any = None
         self.auto_accept_dialogs = True
         self.dialog_action = "accept"
         self.dialog_prompt_text: str | None = None
@@ -1753,8 +1758,190 @@ class CDPClient:
         await self.send_cdp("Page.stopScreencast")
 
         if self._screencast_process:
-            self._screencast_process.stdin.close()
+            if self._screencast_process.stdin:
+                self._screencast_process.stdin.close()
             await self._screencast_process.wait()
             self._screencast_process = None
 
         return {"status": "stopped"}
+
+    async def get_url(self) -> str:
+        """Get the current page URL."""
+        res = await self.evaluate("window.location.href")
+        return str(res or "")
+
+    async def get_title(self) -> str:
+        """Get the current page title."""
+        res = await self.evaluate("document.title")
+        return str(res or "")
+
+    async def switch_connection(
+        self, host: str | None = None, port: int | None = None
+    ) -> dict[str, Any]:
+        """Switch CDP client to another host or port dynamically."""
+        await self.close()
+        if host:
+            self.host = host
+        if port is not None:
+            self.port = int(port)
+        self.target_id = None
+        self.ws_url = None
+        await self.connect()
+        title = ""
+        url = ""
+        if self.is_connected:
+            try:
+                title = await self.get_title()
+                url = await self.get_url()
+            except Exception:
+                pass
+        return {
+            "status": "connected",
+            "host": self.host,
+            "port": self.port,
+            "target_id": self.target_id,
+            "title": title,
+            "url": url,
+        }
+
+    async def launch(
+        self,
+        port: int | None = None,
+        headless: bool = True,
+        user_data_dir: str | None = None,
+        executable_path: str | None = None,
+        extra_args: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Launch a dedicated browser instance with CDP and connect to it."""
+        from .launcher import launch_browser
+
+        if self.managed_browser and self.managed_browser.is_alive():
+            return {
+                "status": "already_running",
+                "port": self.managed_browser.port,
+                "headless": headless,
+            }
+
+        target_port = port or self.port
+        bp = launch_browser(
+            port=target_port,
+            headless=headless,
+            user_data_dir=user_data_dir,
+            executable_path=executable_path,
+            extra_args=extra_args,
+        )
+        self.managed_browser = bp
+        self.port = bp.port
+        await self.switch_connection(host="127.0.0.1", port=bp.port)
+        return {
+            "status": "launched",
+            "port": bp.port,
+            "user_data_dir": bp.user_data_dir,
+            "headless": headless,
+        }
+
+    async def close_managed_browser(self) -> dict[str, Any]:
+        """Close the managed browser process if one was started."""
+        await self.close()
+        if self.managed_browser:
+            self.managed_browser.terminate()
+            self.managed_browser = None
+            return {"status": "closed"}
+        return {"status": "no_managed_browser"}
+
+    async def wait_for_download(
+        self,
+        directory: str,
+        filename_pattern: str | None = None,
+        timeout: float = 30.0,
+        check_interval: float = 0.5,
+    ) -> dict[str, Any]:
+        """Wait for a file download to complete in the specified directory."""
+        if not os.path.isdir(directory):
+            raise FileNotFoundError(f"Download directory does not exist: {directory}")
+
+        start_time = asyncio.get_event_loop().time()
+        initial_files = set(os.listdir(directory))
+
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            current_files = set(os.listdir(directory))
+            new_candidates = [
+                f
+                for f in (current_files - initial_files)
+                if not f.endswith((".crdownload", ".tmp"))
+            ]
+
+            if filename_pattern:
+                new_candidates = [f for f in new_candidates if filename_pattern in f]
+
+            if new_candidates:
+                target_file = sorted(new_candidates)[-1]
+                target_path = os.path.join(directory, target_file)
+                prev_size = -1
+                for _ in range(5):
+                    try:
+                        cur_size = os.path.getsize(target_path)
+                        if cur_size == prev_size and cur_size > 0:
+                            return {
+                                "status": "completed",
+                                "filename": target_file,
+                                "path": target_path,
+                                "size": cur_size,
+                            }
+                        prev_size = cur_size
+                    except OSError:
+                        pass
+                    await asyncio.sleep(0.2)
+
+            await asyncio.sleep(check_interval)
+
+        raise TimeoutError(f"Download did not complete within {timeout}s in {directory}")
+
+    async def export_session(self) -> dict[str, Any]:
+        """Export cookies and storage (localStorage & sessionStorage) as a complete session state."""
+        cookies = await self.get_cookies()
+        storage = await self.get_storage()
+        current_url = ""
+        try:
+            current_url = await self.get_url()
+        except Exception:
+            pass
+
+        return {
+            "url": current_url,
+            "cookies": cookies,
+            "localStorage": storage.get("localStorage", {}),
+            "sessionStorage": storage.get("sessionStorage", {}),
+        }
+
+    async def import_session(self, session_data: dict[str, Any]) -> dict[str, Any]:
+        """Import cookies and storage (localStorage & sessionStorage) into the browser."""
+        cookies = session_data.get("cookies", [])
+        if cookies:
+            await self.send("Network.enable")
+            await self.send("Network.setCookies", {"cookies": cookies})
+
+        local_storage = session_data.get("localStorage", {})
+        session_storage = session_data.get("sessionStorage", {})
+
+        if local_storage or session_storage:
+            js = f"""(() => {{
+                const ls = {json.dumps(local_storage)};
+                for (const [k, v] of Object.entries(ls)) {{
+                    try {{ localStorage.setItem(k, v); }} catch(e) {{}}
+                }}
+                const ss = {json.dumps(session_storage)};
+                for (const [k, v] of Object.entries(ss)) {{
+                    try {{ sessionStorage.setItem(k, v); }} catch(e) {{}}
+                }}
+                return true;
+            }})()"""
+            await self.evaluate(js)
+
+        return {
+            "status": "imported",
+            "cookies_count": len(cookies),
+            "localStorage_keys": len(local_storage),
+            "sessionStorage_keys": len(session_storage),
+        }
+

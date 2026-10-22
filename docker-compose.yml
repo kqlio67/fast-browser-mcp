@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  fast-browser-mcp:
+    build: .
+    image: fast-browser-mcp:latest
+    environment:
+      - FAST_BROWSER_AUTO_LAUNCH=1
+      - FAST_BROWSER_PORT=9222
+    ports:
+      - "9222:9222"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

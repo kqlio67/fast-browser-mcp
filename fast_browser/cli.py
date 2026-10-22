@@ -21,6 +21,11 @@ async def run_cli():
     parser.add_argument(
         "--tab", default=None, help="Target tab filter (URL or title substring)"
     )
+    parser.add_argument(
+        "--auto-launch",
+        action="store_true",
+        help="Automatically launch browser if target port is unreachable",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -396,11 +401,65 @@ async def run_cli():
     )
     dlg_p.add_argument("--prompt-text", help="Text to fill in window.prompt")
 
+    # launch
+    launch_p = subparsers.add_parser(
+        "launch", help="Launch a local browser instance with CDP"
+    )
+    launch_p.add_argument(
+        "--headless",
+        action="store_true",
+        default=True,
+        help="Run in headless mode (default: True)",
+    )
+    launch_p.add_argument(
+        "--no-headless",
+        action="store_false",
+        dest="headless",
+        help="Run with visible browser window",
+    )
+    launch_p.add_argument("--user-data-dir", help="Custom user profile directory")
+
+    # wait-download
+    dl_p = subparsers.add_parser(
+        "wait-download", help="Wait for a file download to complete"
+    )
+    dl_p.add_argument("directory", help="Download directory to monitor")
+    dl_p.add_argument("--pattern", help="Filename substring pattern")
+    dl_p.add_argument(
+        "--timeout", type=float, default=30.0, help="Timeout in seconds (default: 30.0)"
+    )
+
+    # export-session
+    exp_p = subparsers.add_parser(
+        "export-session", help="Export cookies and storage session state to JSON"
+    )
+    exp_p.add_argument("--out", help="Optional output JSON file path")
+
+    # import-session
+    imp_p = subparsers.add_parser(
+        "import-session", help="Import cookies and storage session state from JSON"
+    )
+    imp_p.add_argument("file", help="Path to session JSON file")
+
     args = parser.parse_args()
 
     cdp = CDPClient(host=args.host, port=args.port)
 
-    if args.command == "list-tabs":
+    if args.auto_launch:
+        targets = cdp.list_targets()
+        if not targets:
+            await cdp.launch(port=args.port)
+
+    if args.command == "launch":
+        res = await cdp.launch(
+            port=args.port,
+            headless=args.headless,
+            user_data_dir=args.user_data_dir,
+        )
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return
+
+    elif args.command == "list-tabs":
         targets = cdp.list_targets()
         pages = [
             {"id": t.get("id"), "title": t.get("title"), "url": t.get("url")}
@@ -518,7 +577,7 @@ async def run_cli():
         if steps_raw.startswith(("[", "{")):
             steps = json.loads(steps_raw)
         else:
-            async with aiofiles.open(steps_raw, "r", encoding="utf-8") as f:
+            async with aiofiles.open(steps_raw, encoding="utf-8") as f:
                 steps = json.loads(await f.read())
         if isinstance(steps, dict) and "steps" in steps:
             steps = steps["steps"]
@@ -764,6 +823,29 @@ async def run_cli():
 
     elif args.command == "dialog":
         res = await cdp.handle_dialog(action=args.action, prompt_text=args.prompt_text)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "wait-download":
+        res = await cdp.wait_for_download(
+            directory=args.directory,
+            filename_pattern=args.pattern,
+            timeout=args.timeout,
+        )
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "export-session":
+        session_data = await cdp.export_session()
+        if args.out:
+            async with aiofiles.open(args.out, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(session_data, indent=2, ensure_ascii=False))
+            print(f"Session saved to {args.out}")
+        else:
+            print(json.dumps(session_data, ensure_ascii=False, indent=2))
+
+    elif args.command == "import-session":
+        async with aiofiles.open(args.file, encoding="utf-8") as f:
+            session_data = json.loads(await f.read())
+        res = await cdp.import_session(session_data)
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     await cdp.close()

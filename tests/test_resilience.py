@@ -123,7 +123,7 @@ class TestResilience(BaseBrowserTest):
     def test_tab_cleanup(self):
         async def run():
             # Open extra tab
-            temp_tab = self.cdp.new_tab_sync("about:blank")
+            _ = self.cdp.new_tab_sync("about:blank")
 
             res = self.cdp.cleanup_tabs(keep_current=True, close_blank=True)
             self.assertIn("closed_count", res)

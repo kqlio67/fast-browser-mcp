@@ -21,7 +21,182 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fast_browser.mcp")
 
+RESOURCES = [
+    {
+        "uri": "browser://tabs",
+        "name": "Browser Tabs",
+        "description": "List of all open tabs in the browser",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "browser://active/snapshot",
+        "name": "Active Tab Snapshot",
+        "description": "Token-efficient interactive element snapshot of the active page",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": "browser://active/dom",
+        "name": "Active Tab DOM",
+        "description": "Raw HTML of the active page",
+        "mimeType": "text/html",
+    },
+    {
+        "uri": "browser://console",
+        "name": "Browser Console Logs",
+        "description": "Console output logs from the active browser session",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "browser://network",
+        "name": "Browser Network Traffic",
+        "description": "Captured HTTP/XHR network requests and traffic summary",
+        "mimeType": "application/json",
+    },
+]
+
+PROMPTS = [
+    {
+        "name": "web-research",
+        "description": "Systematic web browsing workflow: search, navigate, snapshot, and extract information.",
+        "arguments": [
+            {
+                "name": "query",
+                "description": "Research topic or query",
+                "required": True,
+            }
+        ],
+    },
+    {
+        "name": "form-automation",
+        "description": "Guide for safely inspecting and filling complex multi-step web forms.",
+        "arguments": [
+            {
+                "name": "url",
+                "description": "Form page URL",
+                "required": True,
+            }
+        ],
+    },
+    {
+        "name": "network-debugger",
+        "description": "Inspect network API requests and WebSocket frames for reverse engineering.",
+        "arguments": [
+            {
+                "name": "url",
+                "description": "Target website URL",
+                "required": False,
+            }
+        ],
+    },
+]
+
 TOOLS = [
+    {
+        "name": "browser_connect",
+        "description": "Dynamically switch or reconnect CDP connection to a specified host and port (e.g. switch between Chrome on 9222 and Antigravity IDE on 43275).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "default": "127.0.0.1",
+                    "description": "CDP host address",
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "CDP remote debugging port",
+                },
+            },
+            "required": ["port"],
+        },
+    },
+    {
+        "name": "browser_launch",
+        "description": "Launch an isolated Chrome or Chromium browser instance with CDP remote debugging enabled.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "description": "Target port (picks free port if omitted)",
+                },
+                "headless": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to run headless",
+                },
+                "user_data_dir": {
+                    "type": "string",
+                    "description": "Custom user profile path",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_close_browser",
+        "description": "Terminate the managed browser instance if one was launched via browser_launch.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_wait_for_download",
+        "description": "Wait for a file download to complete in the download directory without .crdownload extension.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "Directory to watch for completed download",
+                },
+                "filename_pattern": {
+                    "type": "string",
+                    "description": "Optional substring to match filename",
+                },
+                "timeout": {
+                    "type": "number",
+                    "default": 30.0,
+                    "description": "Maximum seconds to wait",
+                },
+            },
+            "required": ["directory"],
+        },
+    },
+    {
+        "name": "browser_export_session",
+        "description": "Export current session state (all cookies, localStorage, sessionStorage) as structured JSON.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "save_path": {
+                    "type": "string",
+                    "description": "Optional file path to save session JSON",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_import_session",
+        "description": "Import session state (cookies, localStorage, sessionStorage) into the browser.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to session JSON file",
+                },
+                "session_data": {
+                    "type": "object",
+                    "description": "Session data dictionary if path is not used",
+                },
+            },
+            "required": [],
+        },
+    },
     {
         "name": "browser_list_tabs",
         "description": "List all open browser pages/tabs with their title, URL, and ID.",
@@ -1197,6 +1372,34 @@ def tool(name: str, requires_connection: bool = True):
 # --- Tab Management & Navigation ---
 
 
+@tool("browser_connect", requires_connection=False)
+async def _handle_connect(server: "MCPServer", args: dict[str, Any]) -> str:
+    host = args.get("host", "127.0.0.1")
+    port = args["port"]
+    res = await server.cdp.switch_connection(host=host, port=port)
+    server.host = host
+    server.port = port
+    return json.dumps(res, indent=2, ensure_ascii=False)
+
+
+@tool("browser_launch", requires_connection=False)
+async def _handle_launch(server: "MCPServer", args: dict[str, Any]) -> str:
+    port = args.get("port")
+    headless = args.get("headless", True)
+    user_data_dir = args.get("user_data_dir")
+    res = await server.cdp.launch(
+        port=port, headless=headless, user_data_dir=user_data_dir
+    )
+    server.port = server.cdp.port
+    return json.dumps(res, indent=2, ensure_ascii=False)
+
+
+@tool("browser_close_browser", requires_connection=False)
+async def _handle_close_browser(server: "MCPServer", args: dict[str, Any]) -> str:
+    res = await server.cdp.close_managed_browser()
+    return json.dumps(res, indent=2, ensure_ascii=False)
+
+
 @tool("browser_list_tabs", requires_connection=False)
 async def _handle_list_tabs(server: "MCPServer", args: dict[str, Any]) -> str:
     targets = await server.cdp.list_targets_async()
@@ -1423,7 +1626,7 @@ async def _handle_upload_file(server: "MCPServer", args: dict[str, Any]) -> str:
 
 
 @tool("browser_screenshot")
-async def _handle_screenshot(server: "MCPServer", args: dict[str, Any]) -> str:
+async def _handle_screenshot(server: "MCPServer", args: dict[str, Any]) -> Any:
     path = args.get("save_path")
     if path:
         path = server.validate_path(path, for_write=True)
@@ -1438,6 +1641,26 @@ async def _handle_screenshot(server: "MCPServer", args: dict[str, Any]) -> str:
         }
     ]
     res = await server.batch.execute(steps)
+    if path:
+        return json.dumps(res, ensure_ascii=False)
+
+    step_results = res.get("results", [])
+    if step_results:
+        data_b64 = step_results[0].get("data_b64")
+        if data_b64:
+            return {
+                "_mcp_content": [
+                    {
+                        "type": "text",
+                        "text": f"Screenshot captured successfully ({len(data_b64)} b64 bytes).",
+                    },
+                    {
+                        "type": "image",
+                        "data": data_b64,
+                        "mimeType": "image/png",
+                    },
+                ]
+            }
     return json.dumps(res, ensure_ascii=False)
 
 
@@ -1662,6 +1885,31 @@ async def _handle_get_storage(server: "MCPServer", args: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+@tool("browser_export_session")
+async def _handle_export_session(server: "MCPServer", args: dict[str, Any]) -> str:
+    data = await server.cdp.export_session()
+    path = args.get("save_path")
+    if path:
+        safe_path = server.validate_path(path, for_write=True)
+        async with aiofiles.open(safe_path, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(data, indent=2, ensure_ascii=False))
+        return f"Session successfully exported to {safe_path}"
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+@tool("browser_import_session")
+async def _handle_import_session(server: "MCPServer", args: dict[str, Any]) -> str:
+    path = args.get("path")
+    if path:
+        safe_path = server.validate_path(path)
+        async with aiofiles.open(safe_path, encoding="utf-8") as f:
+            session_data = json.loads(await f.read())
+    else:
+        session_data = args.get("session_data", {})
+    res = await server.cdp.import_session(session_data)
+    return json.dumps(res, indent=2, ensure_ascii=False)
+
+
 @tool("browser_get_indexeddb")
 async def _handle_get_indexeddb(server: "MCPServer", args: dict[str, Any]) -> str:
     idb = await server.cdp.get_indexeddb_data()
@@ -1767,6 +2015,17 @@ async def _handle_set_download_path(server: "MCPServer", args: dict[str, Any]) -
     return f"Download path configured: {safe_dl_path} (behavior={behavior})"
 
 
+@tool("browser_wait_for_download")
+async def _handle_wait_download(server: "MCPServer", args: dict[str, Any]) -> str:
+    directory = server.validate_path(args["directory"])
+    pat = args.get("filename_pattern")
+    timeout = args.get("timeout", 30.0)
+    res = await server.cdp.wait_for_download(
+        directory, filename_pattern=pat, timeout=float(timeout)
+    )
+    return json.dumps(res, indent=2, ensure_ascii=False)
+
+
 @tool("browser_grant_permissions")
 async def _handle_grant_permissions(server: "MCPServer", args: dict[str, Any]) -> str:
     if args.get("reset"):
@@ -1870,11 +2129,19 @@ async def _handle_fill_form(server: "MCPServer", args: dict[str, Any]) -> str:
 
 class MCPServer:
     def __init__(
-        self, host: str = "127.0.0.1", port: int = 9222, allowed_dir: str | None = None
+        self,
+        host: str = "127.0.0.1",
+        port: int = 9222,
+        allowed_dir: str | None = None,
+        auto_launch: bool = False,
     ):
         self.host = host
         self.port = port
         self.allowed_dir = allowed_dir or os.environ.get("FAST_BROWSER_ALLOWED_DIR")
+        self.auto_launch = auto_launch or (
+            os.environ.get("FAST_BROWSER_AUTO_LAUNCH", "").lower()
+            in ("1", "true", "yes")
+        )
         self.cdp = CDPClient(host=host, port=port)
         self.snapshot = PageSnapshot(self.cdp)
         self.batch = BatchRunner(self.cdp, allowed_dir=self.allowed_dir)
@@ -1984,6 +2251,114 @@ class MCPServer:
                 logger.error(f"Malformed JSON received: {e}")
                 continue
 
+    async def handle_resource_read(self, uri: str) -> dict[str, Any]:
+        if uri == "browser://tabs":
+            targets = await self.cdp.list_targets_async()
+            pages = [
+                {"id": t.get("id"), "title": t.get("title"), "url": t.get("url")}
+                for t in targets
+                if t.get("type") == "page"
+            ]
+            return {
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": json.dumps(pages, indent=2, ensure_ascii=False),
+            }
+        elif uri == "browser://active/snapshot":
+            await self.ensure_connected()
+            snap = await self.snapshot.capture()
+            return {
+                "uri": uri,
+                "mimeType": "text/plain",
+                "text": snap,
+            }
+        elif uri == "browser://active/dom":
+            await self.ensure_connected()
+            html = await self.cdp.get_html()
+            return {
+                "uri": uri,
+                "mimeType": "text/html",
+                "text": html,
+            }
+        elif uri == "browser://console":
+            logs = self.cdp.console.list_logs(limit=100)
+            return {
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": json.dumps(logs, indent=2, ensure_ascii=False),
+            }
+        elif uri == "browser://network":
+            reqs = self.cdp.network.list_requests()
+            return {
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": json.dumps(reqs, indent=2, ensure_ascii=False),
+            }
+        else:
+            raise ValueError(f"Unknown resource URI: {uri}")
+
+    def handle_prompt_get(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if name == "web-research":
+            query = args.get("query", "")
+            return {
+                "description": f"Research guide for: {query}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": (
+                                f"Conduct comprehensive web research on: '{query}'.\n"
+                                "1. Use browser_navigate to visit authoritative sources.\n"
+                                "2. Use browser_snapshot to inspect content with token-efficient refs.\n"
+                                "3. Read text and follow up on key links.\n"
+                                "4. Provide a structured summary with citations."
+                            ),
+                        },
+                    }
+                ],
+            }
+        elif name == "form-automation":
+            url = args.get("url", "")
+            return {
+                "description": f"Form automation guide for: {url}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": (
+                                f"Navigate to '{url}'.\n"
+                                "1. Capture snapshot to identify input fields and their refs.\n"
+                                "2. Use browser_fill_form to fill inputs in batch.\n"
+                                "3. Verify validation messages before final submission."
+                            ),
+                        },
+                    }
+                ],
+            }
+        elif name == "network-debugger":
+            url = args.get("url", "")
+            return {
+                "description": f"Network debugging guide for: {url}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": (
+                                f"Open '{url}' (if specified) and inspect network traffic.\n"
+                                "1. Check browser_network_requests to review API calls.\n"
+                                "2. Use browser_network_get_response to inspect payloads.\n"
+                                "3. Inspect browser_websocket_messages for live WebSocket streams."
+                            ),
+                        },
+                    }
+                ],
+            }
+        else:
+            raise ValueError(f"Unknown prompt name: {name}")
+
     async def run_stdio(self):
         loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
@@ -1991,6 +2366,19 @@ class MCPServer:
         await loop.connect_read_pipe(lambda: protocol, sys.stdin)
 
         logger.info("Fast Browser MCP Server started on stdio.")
+
+        if self.auto_launch:
+            try:
+                targets = await self.cdp.list_targets_async()
+                if not targets:
+                    logger.info("Auto-launching browser instance...")
+                    await self.cdp.launch(port=self.port)
+            except Exception as e:
+                logger.info(f"Auto-launching browser due to connection check: {e}")
+                try:
+                    await self.cdp.launch(port=self.port)
+                except Exception as launch_err:
+                    logger.warning(f"Could not auto-launch browser: {launch_err}")
 
         while True:
             try:
@@ -2013,10 +2401,14 @@ class MCPServer:
                         "id": msg_id,
                         "result": {
                             "protocolVersion": "2024-11-05",
-                            "capabilities": {"tools": {}},
+                            "capabilities": {
+                                "tools": {"listChanged": True},
+                                "resources": {"subscribe": False, "listChanged": False},
+                                "prompts": {"listChanged": False},
+                            },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.10.0",
+                                "version": "0.11.0",
                             },
                         },
                     }
@@ -2033,12 +2425,19 @@ class MCPServer:
                     tool_name = params.get("name")
                     tool_args = params.get("arguments", {})
                     try:
-                        output_text = await self.handle_call(tool_name, tool_args)
+                        raw_output = await self.handle_call(tool_name, tool_args)
+                        if isinstance(raw_output, dict) and "_mcp_content" in raw_output:
+                            content = raw_output["_mcp_content"]
+                        elif isinstance(raw_output, list):
+                            content = raw_output
+                        else:
+                            content = [{"type": "text", "text": str(raw_output)}]
+
                         resp = {
                             "jsonrpc": "2.0",
                             "id": msg_id,
                             "result": {
-                                "content": [{"type": "text", "text": output_text}],
+                                "content": content,
                                 "isError": False,
                             },
                         }
@@ -2057,6 +2456,43 @@ class MCPServer:
                                 "isError": True,
                             },
                         }
+                    self._send_response(resp)
+
+                elif method == "resources/list":
+                    resp = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"resources": RESOURCES},
+                    }
+                    self._send_response(resp)
+
+                elif method == "resources/read":
+                    uri = params.get("uri", "")
+                    content_obj = await self.handle_resource_read(uri)
+                    resp = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"contents": [content_obj]},
+                    }
+                    self._send_response(resp)
+
+                elif method == "prompts/list":
+                    resp = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"prompts": PROMPTS},
+                    }
+                    self._send_response(resp)
+
+                elif method == "prompts/get":
+                    prompt_name = params.get("name", "")
+                    prompt_args = params.get("arguments", {})
+                    prompt_result = self.handle_prompt_get(prompt_name, prompt_args)
+                    resp = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": prompt_result,
+                    }
                     self._send_response(resp)
 
                 elif method == "ping":
@@ -2089,9 +2525,21 @@ def main():
         default=os.environ.get("FAST_BROWSER_ALLOWED_DIR"),
         help="Allowed directory for file operations (sandboxing)",
     )
+    parser.add_argument(
+        "--auto-launch",
+        action="store_true",
+        default=os.environ.get("FAST_BROWSER_AUTO_LAUNCH", "").lower()
+        in ("1", "true", "yes"),
+        help="Automatically launch browser if CDP port is not reachable",
+    )
     args = parser.parse_args()
 
-    server = MCPServer(host=args.host, port=args.port, allowed_dir=args.allowed_dir)
+    server = MCPServer(
+        host=args.host,
+        port=args.port,
+        allowed_dir=args.allowed_dir,
+        auto_launch=args.auto_launch,
+    )
     try:
         asyncio.run(server.run_stdio())
     except KeyboardInterrupt:

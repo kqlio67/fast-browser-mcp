@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
 [![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Version](https://img.shields.io/badge/version-0.10.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
+[![Version](https://img.shields.io/badge/version-0.11.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
 Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 
@@ -26,6 +26,10 @@ Traditional AI browser tools suffer from severe limitations:
 |---|---|---|
 | **Multi-Action Batching (`browser_batch`)** | **Local execution in ~500ms** for 5–10 actions | 20–30 seconds (1 LLM turn per action) |
 | **Snapshot Context Cost** | **< 150 tokens** via numbered `@ref` tree | 10,000–50,000 tokens (raw HTML/DOM) |
+| **Multimodal Screenshots (`type: "image"`)** | Native inline image content for Vision LLMs | ❌ Text base64 or file path only |
+| **Dynamic Port Switching (`browser_connect`)** | Switch on the fly (e.g. Electron apps, port 43275) | ❌ Fixed single port |
+| **Auto-Launch & Standalone (`--auto-launch`)** | Auto-discovers and launches Chromium if not running | ❌ Crashes without manual start |
+| **MCP Resources & Prompts** | `browser://tabs`, `browser://active/snapshot`, etc. | ❌ Tools only |
 | **Shadow DOM & Web Components** | **Deep recursive traversal** into all `shadowRoot` levels | ❌ Incomplete or completely blind |
 | **Chrome System Pages** | Full control over `chrome://settings`, `chrome://extensions`, etc. | ❌ Unsupported |
 | **Extension Management** | List, enable, disable, reload, and inspect extensions | ❌ Unsupported |

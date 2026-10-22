@@ -154,7 +154,7 @@ SNAPSHOT_JS = r"""(() => {
         if (['button', 'link', 'checkbox', 'tab', 'menuitem', 'switch', 'radio'].includes(role)) return true;
         const tabIndex = el.getAttribute('tabindex');
         if (tabIndex && tabIndex !== '-1') return true;
-        
+
         try {
             const style = window.getComputedStyle(el);
             if (style.cursor === 'pointer' && el.children.length === 0) return true;

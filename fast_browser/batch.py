@@ -50,11 +50,13 @@ VALID_ACTIONS: set[str] = {
     "double_click",
     "drag_and_drop",
     "eval",
+    "export_session",
     "export_traffic",
     "extension_action",
     "extensions",
     "extract",
     "fill",
+    "fill_form",
     "find",
     "forward",
     "geolocation",
@@ -64,6 +66,7 @@ VALID_ACTIONS: set[str] = {
     "handle_dialog",
     "history",
     "hover",
+    "import_session",
     "indexeddb",
     "isolated_tab",
     "metrics",
@@ -99,6 +102,7 @@ VALID_ACTIONS: set[str] = {
     "timezone",
     "upload_file",
     "wait",
+    "wait_download",
     "wait_idle",
     "window",
     "ws_messages",
@@ -156,13 +160,12 @@ class BatchRunner:
         # Action-specific parameter checks
         if act == "navigate" and not step.get("url"):
             return f"Step {idx + 1} ('navigate'): missing required 'url'"
-        if act in ("click", "double_click", "right_click", "hover"):
-            if not (
-                step.get("ref")
-                or step.get("selector")
-                or (step.get("x") is not None and step.get("y") is not None)
-            ):
-                return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
+        if act in ("click", "double_click", "right_click", "hover") and not (
+            step.get("ref")
+            or step.get("selector")
+            or (step.get("x") is not None and step.get("y") is not None)
+        ):
+            return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
         if act == "fill":
             if not (step.get("ref") or step.get("selector")):
                 return f"Step {idx + 1} ('fill'): requires 'ref' or 'selector' target"
@@ -743,10 +746,12 @@ class BatchRunner:
                         step_res["detail"] = (
                             f"Screenshot saved to {safe_path} (full_page={full_page})"
                         )
+                        step_res["path"] = safe_path
                     else:
                         step_res["detail"] = (
                             f"Screenshot captured ({len(data_b64)} b64 bytes)"
                         )
+                    step_res["data_b64"] = data_b64
                     step_res["status"] = "ok"
 
                 elif action == "window":
@@ -1004,6 +1009,58 @@ class BatchRunner:
                     res = await self.cdp.handle_dialog(action=act, prompt_text=prompt)
                     step_res["status"] = "ok"
                     step_res["dialog"] = res
+
+                elif action == "fill_form":
+                    elements = step.get("elements", [])
+                    sub_steps = [
+                        {
+                            "action": "fill",
+                            "ref": el.get("ref"),
+                            "selector": el.get("selector"),
+                            "text": el.get("text", ""),
+                            "clear": el.get("clear", True),
+                        }
+                        for el in elements
+                    ]
+                    sub_res = await self.execute(sub_steps)
+                    if not sub_res.get("success"):
+                        raise RuntimeError(f"fill_form failed: {sub_res.get('results')}")
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Filled {len(elements)} form elements"
+
+                elif action == "wait_download":
+                    dir_path = step.get("directory", "downloads")
+                    safe_dir = self.validate_path(dir_path, for_write=True)
+                    pat = step.get("filename_pattern")
+                    timeout_val = step.get("timeout", 30.0)
+                    res = await self.cdp.wait_for_download(
+                        directory=safe_dir, filename_pattern=pat, timeout=float(timeout_val)
+                    )
+                    step_res["status"] = "ok"
+                    step_res["download"] = res
+
+                elif action == "export_session":
+                    session_data = await self.cdp.export_session()
+                    path = step.get("save_path")
+                    if path:
+                        safe_path = self.validate_path(path, for_write=True)
+                        async with aiofiles.open(safe_path, "w", encoding="utf-8") as f:
+                            await f.write(json.dumps(session_data, indent=2))
+                        step_res["detail"] = f"Session exported to {safe_path}"
+                    step_res["status"] = "ok"
+                    step_res["session"] = session_data
+
+                elif action == "import_session":
+                    path = step.get("path")
+                    if path:
+                        safe_path = self.validate_path(path)
+                        async with aiofiles.open(safe_path, encoding="utf-8") as f:
+                            session_data = json.loads(await f.read())
+                    else:
+                        session_data = step.get("session_data", {})
+                    res = await self.cdp.import_session(session_data)
+                    step_res["status"] = "ok"
+                    step_res["import_result"] = res
 
                 else:
                     raise ValueError(f"Unknown action: {action!r}")

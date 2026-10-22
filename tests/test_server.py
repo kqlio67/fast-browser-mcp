@@ -14,12 +14,12 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
 
     def test_tool_count_and_exact_match(self):
         self.assertEqual(
-            len(TOOLS), 69, "Expected exactly 69 registered tools in TOOLS"
+            len(TOOLS), 75, "Expected exactly 75 registered tools in TOOLS"
         )
         self.assertEqual(
             len(TOOL_REGISTRY),
-            69,
-            "Expected exactly 69 registered handlers in TOOL_REGISTRY",
+            75,
+            "Expected exactly 75 registered handlers in TOOL_REGISTRY",
         )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())
@@ -38,12 +38,15 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
             self.assertIn("properties", schema)
 
     def test_connection_requirements(self):
-        # Tabs management tools should not require existing CDP active connection
+        # Tabs management and lifecycle tools should not require existing CDP active connection
         no_conn_tools = {
             "browser_list_tabs",
             "browser_select_tab",
             "browser_new_tab",
             "browser_close_tab",
+            "browser_connect",
+            "browser_launch",
+            "browser_close_browser",
         }
         for name in no_conn_tools:
             handler_info = TOOL_REGISTRY[name]
@@ -275,6 +278,64 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         )
         res = json.loads(res_str)
         self.assertEqual(res["result"], "ok")
+
+    async def test_handle_call_connect(self):
+        self.server.cdp.switch_connection = AsyncMock(
+            return_value={"status": "connected", "port": 43275}
+        )
+        res_str = await self.server.handle_call("browser_connect", {"port": 43275})
+        res = json.loads(res_str)
+        self.assertEqual(res["status"], "connected")
+        self.assertEqual(self.server.port, 43275)
+
+    async def test_handle_call_session(self):
+        self.server.cdp.export_session = AsyncMock(
+            return_value={"cookies": [], "localStorage": {"k": "v"}, "sessionStorage": {}}
+        )
+        self.server.cdp.import_session = AsyncMock(return_value={"status": "imported"})
+
+        res_str = await self.server.handle_call("browser_export_session", {})
+        res = json.loads(res_str)
+        self.assertIn("localStorage", res)
+
+        res_str = await self.server.handle_call(
+            "browser_import_session", {"session_data": res}
+        )
+        res = json.loads(res_str)
+        self.assertEqual(res["status"], "imported")
+
+    async def test_screenshot_multimodal(self):
+        # When save_path is omitted, server should return multimodal _mcp_content with image
+        self.server.batch.execute = AsyncMock(
+            return_value={
+                "success": True,
+                "results": [
+                    {
+                        "action": "screenshot",
+                        "status": "ok",
+                        "data_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    }
+                ],
+            }
+        )
+        res = await self.server.handle_call("browser_screenshot", {})
+        self.assertIsInstance(res, dict)
+        self.assertIn("_mcp_content", res)
+        types = [c["type"] for c in res["_mcp_content"]]
+        self.assertIn("text", types)
+        self.assertIn("image", types)
+
+    async def test_resources_and_prompts(self):
+        self.server.cdp.list_targets_async = AsyncMock(
+            return_value=[{"id": "t1", "type": "page", "title": "Test", "url": "http://test"}]
+        )
+        tabs_res = await self.server.handle_resource_read("browser://tabs")
+        self.assertEqual(tabs_res["mimeType"], "application/json")
+        self.assertIn("Test", tabs_res["text"])
+
+        prompt_res = self.server.handle_prompt_get("web-research", {"query": "AI"})
+        self.assertIn("messages", prompt_res)
+        self.assertIn("AI", prompt_res["messages"][0]["content"]["text"])
 
 
 if __name__ == "__main__":
