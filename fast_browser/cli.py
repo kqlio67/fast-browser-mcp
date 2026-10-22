@@ -7,6 +7,7 @@ import aiofiles
 
 from .batch import BatchRunner
 from .cdp import CDPClient
+from .launcher import validate_environment
 from .snapshot import PageSnapshot
 
 
@@ -89,6 +90,17 @@ async def run_cli():
     fill_p.add_argument("--ref", help="Element reference (e.g. @1)")
     fill_p.add_argument("--selector", help="CSS selector")
     fill_p.add_argument("--text", required=True, help="Text to fill")
+
+    # paste
+    paste_p = subparsers.add_parser(
+        "paste", help="Paste text instantly into input via CDP"
+    )
+    paste_p.add_argument("--ref", help="Element reference (e.g. @1)")
+    paste_p.add_argument("--selector", help="CSS selector")
+    paste_p.add_argument("--text", required=True, help="Text to paste")
+    paste_p.add_argument(
+        "--no-clear", action="store_true", help="Do not clear field before pasting"
+    )
 
     # press-key
     key_p = subparsers.add_parser("press-key", help="Press a keyboard key")
@@ -264,6 +276,11 @@ async def run_cli():
     stealth_p = subparsers.add_parser("stealth", help="Toggle anti-bot stealth mode")
     stealth_p.add_argument(
         "--disable", action="store_true", help="Disable stealth mode"
+    )
+
+    # validate-env
+    subparsers.add_parser(
+        "validate-env", help="Validate browser automation environment and readiness"
     )
 
     # throttling
@@ -450,6 +467,11 @@ async def run_cli():
         if not targets:
             await cdp.launch(port=args.port)
 
+    if args.command == "validate-env":
+        res = validate_environment()
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return
+
     if args.command == "launch":
         res = await cdp.launch(
             port=args.port,
@@ -602,6 +624,21 @@ async def run_cli():
                     "ref": args.ref,
                     "selector": args.selector,
                     "text": args.text,
+                }
+            ]
+        )
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+    elif args.command == "paste":
+        batch = BatchRunner(cdp)
+        res = await batch.execute(
+            [
+                {
+                    "action": "paste",
+                    "ref": args.ref,
+                    "selector": args.selector,
+                    "text": args.text,
+                    "clear": not args.no_clear,
                 }
             ]
         )

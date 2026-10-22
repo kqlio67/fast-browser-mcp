@@ -202,8 +202,8 @@ Add Fast Browser MCP as an MCP stdio server executing:
 ### 🎯 Interaction & Actions
 | Tool | Description |
 |---|---|
-| `browser_click` | Click an element by snapshot ref (`@1`, `@2`) or CSS selector |
-| `browser_fill` | Type text into an input element by ref or CSS selector |
+| `browser_click` | Click an element by snapshot ref (`@1`, `@2`) or CSS selector (supports `trusted: true` for native CDP hardware input with `isTrusted: true`) |
+| `browser_fill` | Type text into an input element by ref or CSS selector (supports `paste: true` for instant CDP text insertion) |
 | `browser_fill_form` | Fill multiple form elements in one fast batch execution |
 | `browser_press_key` | Dispatch keyboard key event (`Enter`, `Escape`, `Tab`, `ArrowDown`, etc.) |
 | `browser_scroll` | Scroll page by $(\Delta x, \Delta y)$ or scroll element into view |
@@ -229,7 +229,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_cdp_send` | **Universal CDP Raw Dispatcher**: Execute any of the 1,000+ Chrome DevTools Protocol commands directly (e.g. `DOM.enable`, `Storage.getCookies`, `Emulation.setDeviceMetricsOverride`, `Security.enable`, etc.) |
 | `browser_list_webmcp_tools` | List WebMCP tools exposed by the web page |
 | `browser_execute_webmcp_tool` | Execute a WebMCP tool exposed by the web page |
-| `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, box model, and fonts for any element by `@ref` or CSS selector |
+| `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, bounding rect, and attached event listeners for any element by `@ref` or CSS selector |
 | `browser_new_isolated_tab` | Spawn a tab in a completely isolated incognito browser context (`Target.createBrowserContext`) with clean session, cookies, and cache |
 | `browser_set_cpu_throttling` | Emulate CPU slowdown factors (`1.0` = normal, `2.0` = 2x slowdown, `4.0` = 4x slowdown) for low-end device testing |
 | `browser_handle_dialog` | Automate JavaScript dialogs (`alert`, `confirm`, `prompt`) by accepting, dismissing, or providing prompt responses without blocking execution |
@@ -266,13 +266,13 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_extension_action` | Manage extensions: `enable`, `disable`, `reload`, `options`, `popup` |
 | `browser_add_preload_script` | Inject custom JavaScript evaluating before page scripts load (hooks / Tampermonkey) |
 | `browser_remove_preload_script` | Remove a previously registered preload script by identifier |
-| `browser_stealth_mode` | Toggle anti-bot stealth overrides (`navigator.webdriver`, plugins, languages) |
+| `browser_stealth_mode` | Toggle anti-bot stealth overrides (`navigator.webdriver`, PluginArray with 5 PDF plugins, client hints, languages, permissions) |
 | `browser_network_throttling` | Emulate network profiles (`offline`, `slow3g`, `fast3g`, `4g`, `none`) or custom latency/bandwidth |
 | `browser_set_media_theme` | Emulate color scheme on page: `dark`, `light`, `no-preference` |
 | `browser_set_page_zoom` | Adjust page zoom scale (e.g. `0.75`, `1.0`, `1.25`, `1.5`) |
 | `browser_mute_tab` | Mute or unmute all audio/video media playback on the active tab |
 | `browser_set_ignore_certificate_errors` | Bypass or enforce SSL/TLS certificate warnings on HTTPS websites |
-| `browser_system_info` | Inspect Chrome version, V8 engine, User-Agent, and memory metrics |
+| `browser_system_info` | Inspect Chrome version, V8 engine, User-Agent, environment readiness, and memory metrics |
 | `browser_set_download_path` | Set download folder and allow downloads without browser dialogs |
 | `browser_grant_permissions` | Grant or reset permissions (`clipboardReadWrite`, `notifications`, `geolocation`) |
 | `browser_set_geolocation` | Override device GPS coordinates (`latitude`, `longitude`, `accuracy`) |

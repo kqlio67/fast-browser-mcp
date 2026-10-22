@@ -527,16 +527,55 @@ class CDPClient:
             await asyncio.sleep(0.05)
         return False
 
-    async def click(
-        self, selector: str, timeout_ms: int = 3000, wait_stable: bool = True
+    async def trusted_click(
+        self,
+        x: float,
+        y: float,
+        click_count: int = 1,
+        button: str = "left",
+        delay_ms: float = 40.0,
     ) -> bool:
-        js = f"""(() => {{
-            const el = document.querySelector({json.dumps(selector)});
-            if (!el) return false;
-            el.scrollIntoView({{block: 'center', inline: 'center'}});
-            el.click();
-            return true;
-        }})()"""
+        """Dispatch native CDP mouse events (mouseMoved, mousePressed, delay, mouseReleased) with isTrusted: true."""
+        await self.mouse_move(x, y)
+        btn_mask = 1 if button == "left" else (2 if button == "right" else 4)
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mousePressed",
+                "x": x,
+                "y": y,
+                "button": button,
+                "clickCount": click_count,
+                "buttons": btn_mask,
+            },
+        )
+        if delay_ms > 0:
+            await asyncio.sleep(delay_ms / 1000.0)
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseReleased",
+                "x": x,
+                "y": y,
+                "button": button,
+                "clickCount": click_count,
+                "buttons": 0,
+            },
+        )
+        return True
+
+    async def insert_text(self, text: str) -> bool:
+        """Insert text directly via CDP text input pipeline (instant, triggers native input/beforeinput events)."""
+        await self.send("Input.insertText", {"text": text})
+        return True
+
+    async def click(
+        self,
+        selector: str,
+        timeout_ms: int = 3000,
+        wait_stable: bool = True,
+        trusted: bool = False,
+    ) -> bool:
         if wait_stable:
             stable = await self.wait_for_element_stable(selector, timeout_ms=timeout_ms)
             if not stable:
@@ -551,6 +590,29 @@ class CDPClient:
                 raise RuntimeError(
                     f"Element '{selector}' not found for click within {timeout_ms}ms"
                 )
+
+        if trusted:
+            coord_js = f"""(() => {{
+                const el = document.querySelector({json.dumps(selector)});
+                if (!el) return null;
+                el.scrollIntoView({{block: 'center', inline: 'center'}});
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {{
+                    return {{x: r.x + r.width / 2, y: r.y + r.height / 2}};
+                }}
+                return null;
+            }})()"""
+            coords = await self.evaluate(coord_js)
+            if isinstance(coords, dict) and "x" in coords and "y" in coords:
+                return await self.trusted_click(float(coords["x"]), float(coords["y"]))
+
+        js = f"""(() => {{
+            const el = document.querySelector({json.dumps(selector)});
+            if (!el) return false;
+            el.scrollIntoView({{block: 'center', inline: 'center'}});
+            el.click();
+            return true;
+        }})()"""
         return await self.evaluate(js)
 
     async def double_click(self, x: float, y: float) -> bool:
@@ -1199,13 +1261,127 @@ class CDPClient:
     async def set_stealth_mode(self, enabled: bool = True) -> dict[str, Any]:
         """Inject comprehensive anti-detection and stealth overrides (navigator.webdriver, plugins, languages)."""
         stealth_js = """(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
-            window.chrome = window.chrome || {
-                app: { isInstalled: false },
-                runtime: { PlatformOs: { LINUX: 'linux' }, PlatformArch: { X86_64: 'x86-64' } }
-            };
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'], configurable: true });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5], configurable: true });
+            // 1. Hide webdriver flag
+            try {
+                if (navigator.webdriver) {
+                    delete Object.getPrototypeOf(navigator).webdriver;
+                }
+            } catch(e) {}
+            try {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
+            } catch(e) {}
+
+            // 2. Mock realistic Chrome object
+            window.chrome = window.chrome || {};
+            if (!window.chrome.app) {
+                window.chrome.app = {
+                    isInstalled: false,
+                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+                    getDetails: function() {},
+                    getIsInstalled: function() { return false; },
+                    installState: function() { return 'not_installed'; },
+                    runningState: function() { return 'cannot_run'; }
+                };
+            }
+            if (!window.chrome.csi) {
+                window.chrome.csi = function() {
+                    return { startE: Date.now(), onloadT: Date.now(), pageT: 100, tran: 15 };
+                };
+            }
+            if (!window.chrome.loadTimes) {
+                window.chrome.loadTimes = function() {
+                    return {
+                        requestTime: Date.now() / 1000,
+                        startLoadTime: Date.now() / 1000,
+                        commitLoadTime: Date.now() / 1000,
+                        finishDocumentLoadTime: Date.now() / 1000,
+                        finishLoadTime: Date.now() / 1000,
+                        firstPaintTime: Date.now() / 1000,
+                        firstPaintAfterLoadTime: 0,
+                        navigationType: 'Other',
+                        wasFetchedViaSpdy: true,
+                        wasNpnNegotiated: true,
+                        npnNegotiatedProtocol: 'h2',
+                        wasAlternateProtocolAvailable: false,
+                        connectionInfo: 'h2'
+                    };
+                };
+            }
+
+            // 3. Languages
+            try {
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                    configurable: true
+                });
+            } catch(e) {}
+
+            // 4. Mock genuine PluginArray and MimeTypeArray (passes Sannysoft & Intoli checks)
+            try {
+                function FakePlugin(name, filename, description) {
+                    this.name = name;
+                    this.filename = filename;
+                    this.description = description;
+                }
+                const pluginList = [
+                    new FakePlugin('PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                    new FakePlugin('Chrome PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                    new FakePlugin('Chromium PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                    new FakePlugin('Microsoft Edge PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                    new FakePlugin('WebKit built-in PDF', 'internal-pdf-viewer', 'Portable Document Format')
+                ];
+                const fakePlugins = Object.create(typeof PluginArray !== 'undefined' ? PluginArray.prototype : Object.prototype);
+                pluginList.forEach((p, idx) => {
+                    Object.defineProperty(fakePlugins, idx, { value: p, enumerable: true, configurable: true });
+                });
+                Object.defineProperty(fakePlugins, 'length', { value: pluginList.length, enumerable: false, configurable: true });
+                fakePlugins.item = function(index) { return this[index] || null; };
+                fakePlugins.namedItem = function(name) {
+                    for (let i = 0; i < pluginList.length; i++) {
+                        if (pluginList[i].name === name) return pluginList[i];
+                    }
+                    return null;
+                };
+                fakePlugins.refresh = function() {};
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => fakePlugins,
+                    configurable: true
+                });
+            } catch(e) {}
+
+            // 5. Clean Client Hints (strip Headless from navigator.userAgentData)
+            try {
+                if (navigator.userAgentData && navigator.userAgentData.brands) {
+                    const cleanBrands = navigator.userAgentData.brands.map(b => ({
+                        brand: b.brand.replace(/HeadlessChrome/i, 'Google Chrome'),
+                        version: b.version
+                    }));
+                    Object.defineProperty(navigator.userAgentData, 'brands', {
+                        get: () => cleanBrands,
+                        configurable: true
+                    });
+                }
+            } catch(e) {}
+
+            // 6. Notification permissions consistency
+            try {
+                if (window.navigator.permissions && window.navigator.permissions.query) {
+                    const origQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = function(params) {
+                        if (params && params.name === 'notifications') {
+                            return Promise.resolve({
+                                state: Notification.permission === 'denied' ? 'denied' : 'prompt',
+                                onchange: null
+                            });
+                        }
+                        return origQuery.apply(this, arguments);
+                    };
+                }
+            } catch(e) {}
         })()"""
         if enabled:
             ident = await self.add_preload_script(stealth_js)
@@ -1666,13 +1842,43 @@ class CDPClient:
                     }}
                 }} catch(e) {{}}
             }}
+            const rect = el.getBoundingClientRect();
+            const events = [];
+            const standardEvents = [
+                'onclick', 'onmouseover', 'onmouseout', 'onkeydown', 'onkeyup',
+                'onkeypress', 'onchange', 'onsubmit', 'onfocus', 'onblur', 'oninput'
+            ];
+            for (const ev of standardEvents) {{
+                if (el[ev]) {{
+                    events.push({{ event: ev.slice(2), type: 'inline', handler: String(el[ev]).slice(0, 300) }});
+                }} else if (el.hasAttribute && el.hasAttribute(ev)) {{
+                    events.push({{ event: ev.slice(2), type: 'attribute', handler: el.getAttribute(ev) }});
+                }}
+            }}
+            const reactKeys = Object.keys(el).filter(k => k.startsWith('__react'));
+            if (reactKeys.length > 0) {{
+                events.push({{ event: 'framework', type: 'React', keys: reactKeys }});
+            }}
+            if (el.__vue__ || el._vnode) {{
+                events.push({{ event: 'framework', type: 'Vue' }});
+            }}
+
             return {{
                 tag: el.tagName.toLowerCase(),
                 id: el.id,
                 className: el.className,
                 inlineStyle: el.style.cssText,
                 computed: compObj,
-                matchedRules: matchedRules.slice(0, 20)
+                matchedRules: matchedRules.slice(0, 20),
+                rect: {{
+                    width: rect.width,
+                    height: rect.height,
+                    top: rect.top,
+                    left: rect.left,
+                    bottom: rect.bottom,
+                    right: rect.right
+                }},
+                eventListeners: events
             }};
         }})()"""
         res = await self.evaluate(js, session_id=session_id)

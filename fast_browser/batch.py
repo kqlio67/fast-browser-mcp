@@ -75,6 +75,7 @@ VALID_ACTIONS: set[str] = {
     "mute",
     "navigate",
     "network_requests",
+    "paste",
     "pdf",
     "permissions",
     "preload_script",
@@ -236,29 +237,115 @@ class BatchRunner:
                 elif action == "click":
                     ref = step.get("ref")
                     selector = step.get("selector")
+                    trusted = step.get("trusted", False)
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
                         session_id = self.cdp.ref_session_map.get(id_num)
-                        js = f"""(() => {{
-                            const el = window.__fb_refs && window.__fb_refs[{id_num}];
-                            if (!el) return false;
-                            el.scrollIntoView({{block: 'center', inline: 'center'}});
-                            el.click();
-                            return true;
-                        }})()"""
-                        success = await self.cdp.evaluate(js, session_id=session_id)
-                        if not success:
-                            raise RuntimeError(
-                                f"Reference {ref} not found or expired. Run 'snapshot' again."
-                            )
-                        step_res["detail"] = f"Clicked ref {ref}"
+                        clicked = False
+                        if trusted and not session_id:
+                            coord_js = f"""(() => {{
+                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                if (!el) return null;
+                                el.scrollIntoView({{block: 'center', inline: 'center'}});
+                                const r = el.getBoundingClientRect();
+                                if (r.width > 0 && r.height > 0) {{
+                                    return {{x: r.x + r.width / 2, y: r.y + r.height / 2}};
+                                }}
+                                return null;
+                            }})()"""
+                            coords = await self.cdp.evaluate(coord_js)
+                            if (
+                                isinstance(coords, dict)
+                                and "x" in coords
+                                and "y" in coords
+                            ):
+                                await self.cdp.trusted_click(
+                                    float(coords["x"]), float(coords["y"])
+                                )
+                                clicked = True
+                                step_res["detail"] = f"Clicked ref {ref} (trusted)"
+                        if not clicked:
+                            js = f"""(() => {{
+                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                if (!el) return false;
+                                el.scrollIntoView({{block: 'center', inline: 'center'}});
+                                el.click();
+                                return true;
+                            }})()"""
+                            success = await self.cdp.evaluate(js, session_id=session_id)
+                            if not success:
+                                raise RuntimeError(
+                                    f"Reference {ref} not found or expired. Run 'snapshot' again."
+                                )
+                            step_res["detail"] = f"Clicked ref {ref}"
                     elif selector:
                         await self.cdp.click(
-                            selector, timeout_ms=step.get("timeout_ms", 3000)
+                            selector,
+                            timeout_ms=step.get("timeout_ms", 3000),
+                            trusted=trusted,
                         )
                         step_res["detail"] = f"Clicked selector '{selector}'"
                     else:
                         raise ValueError("Click action requires 'ref' or 'selector'")
+                    step_res["status"] = "ok"
+
+                elif action == "paste":
+                    ref = step.get("ref")
+                    selector = step.get("selector")
+                    text = step.get("text", "")
+                    clear = step.get("clear", True)
+
+                    if ref:
+                        id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
+                        focus_js = f"""(() => {{
+                            const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                            if (!el) return false;
+                            el.scrollIntoView({{block: 'center', inline: 'center'}});
+                            el.focus();
+                            if ({json.dumps(clear)}) {{
+                                if (typeof el.select === 'function') el.select();
+                                else el.value = '';
+                            }}
+                            return true;
+                        }})()"""
+                        success = await self.cdp.evaluate(
+                            focus_js, session_id=session_id
+                        )
+                        if not success:
+                            raise RuntimeError(
+                                f"Reference {ref} not found or expired. Run 'snapshot' again."
+                            )
+                        if clear:
+                            await self.cdp.press_key("Backspace")
+                        await self.cdp.insert_text(text)
+                        step_res["detail"] = f"Pasted into ref {ref}: {text!r}"
+                    elif selector:
+                        focus_js = f"""(() => {{
+                            const el = document.querySelector({json.dumps(selector)});
+                            if (!el) return false;
+                            el.scrollIntoView({{block: 'center', inline: 'center'}});
+                            el.focus();
+                            if ({json.dumps(clear)}) {{
+                                if (typeof el.select === 'function') el.select();
+                                else el.value = '';
+                            }}
+                            return true;
+                        }})()"""
+                        success = await self.cdp.evaluate(focus_js)
+                        if not success:
+                            raise RuntimeError(
+                                f"Element '{selector}' not found for paste"
+                            )
+                        if clear:
+                            await self.cdp.press_key("Backspace")
+                        await self.cdp.insert_text(text)
+                        step_res["detail"] = (
+                            f"Pasted into selector '{selector}': {text!r}"
+                        )
+                    else:
+                        await self.cdp.insert_text(text)
+                        step_res["detail"] = f"Pasted text: {text!r}"
                     step_res["status"] = "ok"
 
                 elif action == "double_click":

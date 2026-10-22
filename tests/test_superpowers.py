@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 
 from fast_browser.batch import BatchRunner
@@ -117,6 +118,47 @@ class TestSuperpowers(BaseBrowserTest):
             res = await batch.execute(steps)
             self.assertTrue(res["success"])
             self.assertEqual(res["steps_executed"], 4)
+            await self.cdp.close()
+
+        asyncio.run(run())
+
+    def test_stealth_advanced_properties(self):
+        async def run():
+            await self.cdp.connect(target_id=self.tab_id)
+            await self.cdp.set_stealth_mode(enabled=True)
+            plugin_count = await self.cdp.evaluate("navigator.plugins.length")
+            self.assertEqual(plugin_count, 5)
+            has_csi = await self.cdp.evaluate("typeof window.chrome.csi === 'function'")
+            self.assertTrue(has_csi)
+            await self.cdp.close()
+
+        asyncio.run(run())
+
+    def test_batch_paste_and_trusted_click(self):
+        async def run():
+            await self.cdp.connect(target_id=self.tab_id)
+            html = """
+            <input id="input-box" type="text" />
+            <button id="click-btn" onclick="this.textContent='Clicked!'">Click Me</button>
+            """
+            await self.cdp.evaluate(f"document.body.innerHTML = {json.dumps(html)}")
+            batch = BatchRunner(self.cdp)
+            steps = [
+                {"action": "paste", "selector": "#input-box", "text": "PastedFast"},
+                {"action": "click", "selector": "#click-btn", "trusted": True},
+            ]
+            res = await batch.execute(steps)
+            self.assertTrue(res["success"])
+            val = await self.cdp.evaluate("document.querySelector('#input-box').value")
+            self.assertEqual(val, "PastedFast")
+            btn_txt = await self.cdp.evaluate("document.querySelector('#click-btn').textContent")
+            self.assertEqual(btn_txt, "Clicked!")
+
+            # Verify get_css_styles includes rect and eventListeners
+            styles = await self.cdp.get_css_styles(selector="#click-btn")
+            self.assertIn("rect", styles)
+            self.assertIn("eventListeners", styles)
+            self.assertTrue(any(ev.get("event") == "click" for ev in styles["eventListeners"]))
             await self.cdp.close()
 
         asyncio.run(run())

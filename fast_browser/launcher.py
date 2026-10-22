@@ -1,11 +1,14 @@
 import atexit
 import logging
 import os
+import platform
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
+from typing import Any
 
 import requests
 
@@ -70,6 +73,97 @@ def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
+
+
+def is_running_as_root() -> bool:
+    """Check if the current process is running as root or administrator."""
+    try:
+        return os.getuid() == 0  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        return False
+
+
+def is_running_in_container() -> bool:
+    """Check if the current process is running inside a Docker/Kubernetes container."""
+    if (
+        os.path.exists("/.dockerenv")
+        or os.environ.get("container")
+        or os.environ.get("KUBERNETES_SERVICE_HOST")
+    ):
+        return True
+    try:
+        if os.path.exists("/proc/1/cgroup"):
+            with open("/proc/1/cgroup", encoding="utf-8") as f:
+                content = f.read()
+                return "docker" in content or "kubepods" in content
+    except (OSError, PermissionError):
+        pass
+    return False
+
+
+def sandbox_must_be_disabled() -> bool:
+    """Determine if Chrome sandbox must be disabled on the current platform."""
+    if platform.system().lower() != "linux":
+        return False
+    return is_running_as_root() or is_running_in_container()
+
+
+def cleanup_stale_profiles(max_age_seconds: int = 21600) -> int:
+    """Clean up orphan fast_browser_profile_* temp directories older than max_age_seconds (default 6h)."""
+    temp_dir = tempfile.gettempdir()
+    now = time.time()
+    cleaned = 0
+    try:
+        for entry in os.listdir(temp_dir):
+            if entry.startswith("fast_browser_profile_"):
+                full_path = os.path.join(temp_dir, entry)
+                try:
+                    if os.path.isdir(full_path):
+                        mtime = os.path.getmtime(full_path)
+                        if (now - mtime) > max_age_seconds:
+                            shutil.rmtree(full_path, ignore_errors=True)
+                            cleaned += 1
+                except (OSError, PermissionError):
+                    pass
+    except Exception as e:
+        logger.debug(f"Error sweeping stale profiles: {e}")
+    return cleaned
+
+
+def validate_environment() -> dict[str, Any]:
+    """Validate system and browser environment for automation readiness."""
+    browser_path = find_browser_executable()
+    sys_name = platform.system()
+    is_root = is_running_as_root()
+    is_container = is_running_in_container()
+    sandbox_needed = sandbox_must_be_disabled()
+
+    browser_type = "Unknown"
+    if browser_path:
+        b_lower = browser_path.lower()
+        if "brave" in b_lower:
+            browser_type = "Brave"
+        elif "edge" in b_lower or "msedge" in b_lower:
+            browser_type = "Microsoft Edge"
+        elif "chromium" in b_lower:
+            browser_type = "Chromium"
+        elif "chrome" in b_lower:
+            browser_type = "Google Chrome"
+
+    has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+    return {
+        "status": "ready" if browser_path else "missing_browser",
+        "browser_path": browser_path,
+        "browser_type": browser_type,
+        "system": sys_name,
+        "release": platform.release(),
+        "is_root": is_root,
+        "is_container": is_container,
+        "sandbox_disabled_required": sandbox_needed,
+        "has_display": has_display,
+        "recommended_args": ["--no-sandbox"] if sandbox_needed else [],
+    }
 
 
 class BrowserProcess:
@@ -161,6 +255,8 @@ def launch_browser(
     else:
         os.makedirs(user_data_dir, exist_ok=True)
 
+    cleanup_stale_profiles()
+
     cmd = [
         browser_bin,
         f"--remote-debugging-port={target_port}",
@@ -173,9 +269,17 @@ def launch_browser(
         "--mute-audio",
     ]
 
+    if sandbox_must_be_disabled():
+        cmd.append("--no-sandbox")
+
     if headless:
         cmd.append("--headless=new")
-        cmd.append("--disable-gpu")
+        if (
+            sys.platform == "linux"
+            and not os.environ.get("DISPLAY")
+            and not os.environ.get("WAYLAND_DISPLAY")
+        ):
+            cmd.append("--disable-gpu")
 
     if extra_args:
         cmd.extend(extra_args)

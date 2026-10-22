@@ -1,8 +1,13 @@
 import unittest
 
 from fast_browser.launcher import (
+    cleanup_stale_profiles,
     find_browser_executable,
     find_free_port,
+    is_running_as_root,
+    is_running_in_container,
+    sandbox_must_be_disabled,
+    validate_environment,
 )
 
 
@@ -21,3 +26,24 @@ class TestLauncher(unittest.TestCase):
         self.assertGreater(port1, 1024)
         self.assertIsInstance(port2, int)
         self.assertGreater(port2, 1024)
+
+    def test_environment_validation(self):
+        res = validate_environment()
+        self.assertIn("status", res)
+        self.assertIn("system", res)
+        self.assertIn("is_root", res)
+        self.assertIn("is_container", res)
+        self.assertIn("sandbox_disabled_required", res)
+        self.assertIsInstance(res["is_root"], bool)
+        self.assertIsInstance(res["is_container"], bool)
+
+    def test_sandbox_helpers(self):
+        root = is_running_as_root()
+        container = is_running_in_container()
+        self.assertIsInstance(root, bool)
+        self.assertIsInstance(container, bool)
+        self.assertIsInstance(sandbox_must_be_disabled(), bool)
+
+    def test_cleanup_stale_profiles(self):
+        cleaned = cleanup_stale_profiles(max_age_seconds=1000000)
+        self.assertIsInstance(cleaned, int)

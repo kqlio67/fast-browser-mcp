@@ -12,6 +12,7 @@ import aiofiles
 
 from .batch import BatchRunner
 from .cdp import CDPClient
+from .launcher import validate_environment
 from .snapshot import PageSnapshot
 
 logging.basicConfig(
@@ -349,6 +350,11 @@ TOOLS = [
                     "type": "string",
                     "description": "CSS selector if ref is not used",
                 },
+                "trusted": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Dispatch trusted CDP hardware mouse events (isTrusted: true)",
+                },
             },
             "required": [],
         },
@@ -372,6 +378,11 @@ TOOLS = [
                     "type": "boolean",
                     "default": True,
                     "description": "Clear before typing",
+                },
+                "paste": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Use instant CDP text insertion pipeline",
                 },
             },
             "required": ["text"],
@@ -809,7 +820,7 @@ TOOLS = [
     },
     {
         "name": "browser_system_info",
-        "description": "Get comprehensive browser information: Chrome version, V8 version, User-Agent, protocol version, and memory performance metrics.",
+        "description": "Get comprehensive browser information: Chrome version, V8 version, User-Agent, protocol version, environment validation, and memory performance metrics.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -1554,7 +1565,8 @@ async def _handle_eval(server: "MCPServer", args: dict[str, Any]) -> str:
 async def _handle_click(server: "MCPServer", args: dict[str, Any]) -> str:
     ref = args.get("ref")
     selector = args.get("selector")
-    steps = [{"action": "click", "ref": ref, "selector": selector}]
+    trusted = args.get("trusted", True)
+    steps = [{"action": "click", "ref": ref, "selector": selector, "trusted": trusted}]
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False)
 
@@ -1565,9 +1577,10 @@ async def _handle_fill(server: "MCPServer", args: dict[str, Any]) -> str:
     selector = args.get("selector")
     text = args.get("text", "")
     clear = args.get("clear", True)
+    action = "paste" if args.get("paste") else "fill"
     steps = [
         {
-            "action": "fill",
+            "action": action,
             "ref": ref,
             "selector": selector,
             "text": text,
@@ -1996,7 +2009,13 @@ async def _handle_system_info(server: "MCPServer", args: dict[str, Any]) -> str:
     except Exception as e:
         logger.debug(e)
     targets = await server.cdp.list_targets_async()
-    info = {"browser_version": ver, "metrics": metrics, "targets_count": len(targets)}
+    env = validate_environment()
+    info = {
+        "browser_version": ver,
+        "metrics": metrics,
+        "targets_count": len(targets),
+        "environment": env,
+    }
     return json.dumps(info, ensure_ascii=False, indent=2)
 
 
