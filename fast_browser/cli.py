@@ -601,8 +601,11 @@ async def run_cli():
         else:
             async with aiofiles.open(steps_raw, encoding="utf-8") as f:
                 steps = json.loads(await f.read())
-        if isinstance(steps, dict) and "steps" in steps:
-            steps = steps["steps"]
+        if isinstance(steps, dict):
+            if "steps" in steps:
+                steps = steps["steps"]
+            elif "actions" in steps:
+                steps = steps["actions"]
 
         batch = BatchRunner(cdp)
         res = await batch.execute(steps)

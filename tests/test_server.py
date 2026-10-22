@@ -279,6 +279,30 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         res = json.loads(res_str)
         self.assertEqual(res["result"], "ok")
 
+    async def test_handle_call_batch(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"success": True, "steps_executed": 1, "results": []}
+        )
+        # Test with 'steps'
+        res_str = await self.server.handle_call(
+            "browser_batch", {"steps": [{"action": "eval", "expression": "1+1"}]}
+        )
+        res = json.loads(res_str)
+        self.assertTrue(res["success"])
+        self.server.batch.execute.assert_awaited_with(
+            [{"action": "eval", "expression": "1+1"}]
+        )
+
+        # Test with 'actions' alias
+        res_str2 = await self.server.handle_call(
+            "browser_batch", {"actions": [{"action": "click", "selector": "#btn"}]}
+        )
+        res2 = json.loads(res_str2)
+        self.assertTrue(res2["success"])
+        self.server.batch.execute.assert_awaited_with(
+            [{"action": "click", "selector": "#btn"}]
+        )
+
     async def test_handle_call_connect(self):
         self.server.cdp.switch_connection = AsyncMock(
             return_value={"status": "connected", "port": 43275}

@@ -1549,7 +1549,7 @@ async def _handle_find_in_page(server: "MCPServer", args: dict[str, Any]) -> str
 
 @tool("browser_batch")
 async def _handle_batch(server: "MCPServer", args: dict[str, Any]) -> str:
-    steps = args.get("steps", [])
+    steps = args.get("steps") or args.get("actions", [])
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
