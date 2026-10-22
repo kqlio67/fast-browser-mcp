@@ -130,6 +130,10 @@ TOOLS = [
                     "type": "string",
                     "description": "Custom user profile path",
                 },
+                "profile_name": {
+                    "type": "string",
+                    "description": "Optional name for persistent profile directory (e.g. 'default', 'work'), preserving logins across restarts",
+                },
             },
             "required": [],
         },
@@ -355,13 +359,17 @@ TOOLS = [
                     "default": False,
                     "description": "Dispatch trusted CDP hardware mouse events (isTrusted: true)",
                 },
+                "wait_for": {
+                    "type": "string",
+                    "description": "Optional CSS selector or @ref to wait for after clicking",
+                },
             },
             "required": [],
         },
     },
     {
         "name": "browser_fill",
-        "description": "Fill text into an input element by its snapshot reference (@1, @2, ...) or CSS selector.",
+        "description": "Fill text into an input element by its snapshot reference (@1, @2, ...) or CSS selector. Auto-detects contenteditable and rich text editors.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -383,6 +391,11 @@ TOOLS = [
                     "type": "boolean",
                     "default": False,
                     "description": "Use instant CDP text insertion pipeline",
+                },
+                "press_enter": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Press Enter key immediately after entering text (useful for chat submissions or search queries)",
                 },
             },
             "required": ["text"],
@@ -1259,15 +1272,15 @@ TOOLS = [
     },
     {
         "name": "browser_handle_dialog",
-        "description": "Handle or configure behavior for JavaScript dialogs (alert, confirm, prompt) with custom action and prompt text.",
+        "description": "Handle or configure behavior for JavaScript dialogs (alert, confirm, prompt) or dismiss DOM modal overlays and cookie banners.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["accept", "dismiss"],
+                    "enum": ["accept", "dismiss", "dismiss_overlays"],
                     "default": "accept",
-                    "description": "Whether to accept or dismiss dialog",
+                    "description": "Whether to accept or dismiss dialog, or dismiss DOM overlays/banners",
                 },
                 "prompt_text": {
                     "type": "string",
@@ -1398,8 +1411,12 @@ async def _handle_launch(server: "MCPServer", args: dict[str, Any]) -> str:
     port = args.get("port")
     headless = args.get("headless", True)
     user_data_dir = args.get("user_data_dir")
+    profile_name = args.get("profile_name")
     res = await server.cdp.launch(
-        port=port, headless=headless, user_data_dir=user_data_dir
+        port=port,
+        headless=headless,
+        user_data_dir=user_data_dir,
+        profile_name=profile_name,
     )
     server.port = server.cdp.port
     return json.dumps(res, indent=2, ensure_ascii=False)
@@ -1566,7 +1583,16 @@ async def _handle_click(server: "MCPServer", args: dict[str, Any]) -> str:
     ref = args.get("ref")
     selector = args.get("selector")
     trusted = args.get("trusted", True)
-    steps = [{"action": "click", "ref": ref, "selector": selector, "trusted": trusted}]
+    wait_for = args.get("wait_for")
+    steps = [
+        {
+            "action": "click",
+            "ref": ref,
+            "selector": selector,
+            "trusted": trusted,
+            "wait_for": wait_for,
+        }
+    ]
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False)
 
@@ -1577,6 +1603,7 @@ async def _handle_fill(server: "MCPServer", args: dict[str, Any]) -> str:
     selector = args.get("selector")
     text = args.get("text", "")
     clear = args.get("clear", True)
+    press_enter = args.get("press_enter", False)
     action = "paste" if args.get("paste") else "fill"
     steps = [
         {
@@ -1585,6 +1612,7 @@ async def _handle_fill(server: "MCPServer", args: dict[str, Any]) -> str:
             "selector": selector,
             "text": text,
             "clear": clear,
+            "press_enter": press_enter,
         }
     ]
     res = await server.batch.execute(steps)

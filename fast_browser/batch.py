@@ -32,6 +32,11 @@ class BatchStep(TypedDict, total=False):
     scale: float | None
     page: str | None
     profile: str | None
+    clear: bool | None
+    press_enter: bool | None
+    wait_for: str | None
+    wait_idle: bool | None
+    trusted: bool | None
 
 
 VALID_ACTIONS: set[str] = {
@@ -47,6 +52,8 @@ VALID_ACTIONS: set[str] = {
     "console_logs",
     "cpu_throttling",
     "css_styles",
+    "dismiss_banners",
+    "dismiss_dialogs",
     "double_click",
     "drag_and_drop",
     "eval",
@@ -287,6 +294,23 @@ class BatchRunner:
                         step_res["detail"] = f"Clicked selector '{selector}'"
                     else:
                         raise ValueError("Click action requires 'ref' or 'selector'")
+
+                    wait_for = step.get("wait_for")
+                    if wait_for:
+                        if wait_for.startswith("@"):
+                            id_n = int(wait_for.replace("@", ""))
+                            await self.cdp.evaluate(
+                                f"new Promise((resolve) => {{ const c = () => {{ if (window.__fb_refs && window.__fb_refs[{id_n}]) resolve(true); else setTimeout(c, 50); }}; setTimeout(() => resolve(false), 5000); c(); }})"
+                            )
+                        else:
+                            await self.cdp.wait_for_selector(
+                                wait_for, timeout_ms=step.get("timeout_ms", 5000)
+                            )
+                    if step.get("wait_idle"):
+                        await self.cdp.wait_for_network_idle(
+                            idle_time=0.5, timeout=5.0
+                        )
+
                     step_res["status"] = "ok"
 
                 elif action == "paste":
@@ -294,6 +318,7 @@ class BatchRunner:
                     selector = step.get("selector")
                     text = step.get("text", "")
                     clear = step.get("clear", True)
+                    press_enter = step.get("press_enter", False)
 
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
@@ -346,6 +371,9 @@ class BatchRunner:
                     else:
                         await self.cdp.insert_text(text)
                         step_res["detail"] = f"Pasted text: {text!r}"
+
+                    if press_enter:
+                        await self.cdp.press_key("Enter")
                     step_res["status"] = "ok"
 
                 elif action == "double_click":
@@ -490,26 +518,52 @@ class BatchRunner:
                     selector = step.get("selector")
                     text = step.get("text", "")
                     clear = step.get("clear", True)
+                    press_enter = step.get("press_enter", False)
 
                     if ref:
                         id_num = int(str(ref).replace("@", ""))
                         session_id = self.cdp.ref_session_map.get(id_num)
-                        js = f"""(() => {{
+                        detect_js = f"""(() => {{
                             const el = window.__fb_refs && window.__fb_refs[{id_num}];
-                            if (!el) return false;
+                            if (!el) return null;
                             el.scrollIntoView({{block: 'center', inline: 'center'}});
                             el.focus();
-                            if ({json.dumps(clear)}) el.value = '';
-                            el.value = {json.dumps(text)};
-                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            return true;
+                            const isCE = !('value' in el) || el.isContentEditable || el.getAttribute('role') === 'textbox';
+                            if (isCE && {json.dumps(clear)} && document.execCommand) {{
+                                document.execCommand('selectAll', false, null);
+                            }}
+                            return {{ isCE: Boolean(isCE) }};
                         }})()"""
-                        success = await self.cdp.evaluate(js, session_id=session_id)
-                        if not success:
+                        info = await self.cdp.evaluate(detect_js, session_id=session_id)
+                        if info is None:
                             raise RuntimeError(
                                 f"Reference {ref} not found or expired. Run 'snapshot' again."
                             )
+                        if isinstance(info, dict) and info.get("isCE"):
+                            if clear:
+                                await self.cdp.press_key("Backspace")
+                            await self.cdp.insert_text(text)
+                            await self.cdp.evaluate(
+                                f"""(() => {{
+                                    const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                    if (el) {{
+                                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    }}
+                                }})()""",
+                                session_id=session_id,
+                            )
+                        else:
+                            js = f"""(() => {{
+                                const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                                if (!el) return false;
+                                if ({json.dumps(clear)}) el.value = '';
+                                el.value = {json.dumps(text)};
+                                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                return true;
+                            }})()"""
+                            await self.cdp.evaluate(js, session_id=session_id)
                         step_res["detail"] = f"Filled ref {ref} with {text!r}"
                     elif selector:
                         await self.cdp.fill(
@@ -517,13 +571,22 @@ class BatchRunner:
                             text,
                             clear=clear,
                             timeout_ms=step.get("timeout_ms", 3000),
+                            press_enter=False,
                         )
                         step_res["detail"] = (
                             f"Filled selector '{selector}' with {text!r}"
                         )
                     else:
                         raise ValueError("Fill action requires 'ref' or 'selector'")
+
+                    if press_enter:
+                        await self.cdp.press_key("Enter")
                     step_res["status"] = "ok"
+
+                elif action in ("dismiss_banners", "dismiss_dialogs"):
+                    count = await self.cdp.dismiss_banners()
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Dismissed {count} banner/dialog overlay(s)"
 
                 elif action == "press_key":
                     key = step.get("key")

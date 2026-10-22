@@ -1,17 +1,30 @@
+import os
+import shutil
 import unittest
 
 from fast_browser.launcher import (
     cleanup_stale_profiles,
     find_browser_executable,
     find_free_port,
+    get_profile_dir,
+    get_profiles_dir,
     is_running_as_root,
     is_running_in_container,
+    list_profiles,
     sandbox_must_be_disabled,
     validate_environment,
 )
 
 
 class TestLauncher(unittest.TestCase):
+    def test_persistent_profiles(self):
+        pdir = get_profile_dir("test_user_profile")
+        self.assertTrue(os.path.isdir(pdir))
+        self.assertIn("test_user_profile", pdir)
+        profiles = list_profiles()
+        self.assertIn("test_user_profile", profiles)
+        # Cleanup
+        shutil.rmtree(get_profiles_dir(), ignore_errors=True)
     def test_find_browser_executable(self):
         # Should return a valid string or None without throwing
         browser_bin = find_browser_executable()

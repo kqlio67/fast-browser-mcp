@@ -711,20 +711,8 @@ class CDPClient:
         clear: bool = True,
         timeout_ms: int = 3000,
         wait_stable: bool = True,
+        press_enter: bool = False,
     ) -> bool:
-        js = f"""(() => {{
-            const el = document.querySelector({json.dumps(selector)});
-            if (!el) return false;
-            el.scrollIntoView({{block: 'center', inline: 'center'}});
-            el.focus();
-            if ({json.dumps(clear)}) {{
-                el.value = '';
-            }}
-            el.value = {json.dumps(text)};
-            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            return true;
-        }})()"""
         if wait_stable:
             stable = await self.wait_for_element_stable(selector, timeout_ms=timeout_ms)
             if not stable:
@@ -739,7 +727,49 @@ class CDPClient:
                 raise RuntimeError(
                     f"Element '{selector}' not found for fill within {timeout_ms}ms"
                 )
-        return await self.evaluate(js)
+
+        detect_js = f"""(() => {{
+            const el = document.querySelector({json.dumps(selector)});
+            if (!el) return null;
+            el.scrollIntoView({{block: 'center', inline: 'center'}});
+            el.focus();
+            const isCE = !('value' in el) || el.isContentEditable || el.getAttribute('role') === 'textbox';
+            if (isCE && {json.dumps(clear)} && document.execCommand) {{
+                document.execCommand('selectAll', false, null);
+            }}
+            return {{ isCE: Boolean(isCE) }};
+        }})()"""
+        info = await self.evaluate(detect_js)
+        if isinstance(info, dict) and info.get("isCE"):
+            if clear:
+                await self.press_key("Backspace")
+            await self.insert_text(text)
+            await self.evaluate(
+                f"""(() => {{
+                const el = document.querySelector({json.dumps(selector)});
+                if (el) {{
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+            }})()"""
+            )
+        else:
+            js = f"""(() => {{
+                const el = document.querySelector({json.dumps(selector)});
+                if (!el) return false;
+                if ({json.dumps(clear)}) {{
+                    el.value = '';
+                }}
+                el.value = {json.dumps(text)};
+                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                return true;
+            }})()"""
+            await self.evaluate(js)
+
+        if press_enter:
+            await self.press_key("Enter")
+        return True
 
     async def press_key(self, key: str) -> bool:
         key_def = KEY_DEFINITIONS.get(key)
@@ -1917,11 +1947,43 @@ class CDPClient:
         self.dialog_action = action
         self.dialog_prompt_text = prompt_text
 
+    async def dismiss_banners(self) -> int:
+        """Dismiss common cookie banners, modal dialogs, and 'Not now' prompts in DOM."""
+        js = """(() => {
+            let count = 0;
+            const dismissWords = [
+                'not now', 'не зараз', 'не сейчас', 'accept all', 'accept', 'allow all',
+                'i accept', 'agree', 'got it', 'dismiss', 'close', 'reject all',
+                'save info', 'later', 'skip'
+            ];
+            const candidates = document.querySelectorAll(
+                'dialog button, [role="dialog"] button, [aria-modal="true"] button, .cookie-banner button, #cookie-banner button, .banner button'
+            );
+            for (const btn of candidates) {
+                if (!btn || btn.offsetParent === null) continue;
+                const txt = (btn.innerText || btn.textContent || btn.getAttribute('aria-label') || '').trim().toLowerCase();
+                if (dismissWords.some(w => txt.includes(w))) {
+                    try {
+                        btn.click();
+                        count++;
+                    } catch (e) {}
+                }
+            }
+            return count;
+        })()"""
+        res = await self.evaluate(js)
+        return int(res) if isinstance(res, (int, float)) else 0
+
     async def handle_dialog(
         self, action: str = "accept", prompt_text: str | None = None
     ) -> dict[str, Any]:
-        """Handle active JavaScript dialog with custom action and prompt text."""
-        d_params: dict[str, Any] = {"accept": action.lower() == "accept"}
+        """Handle active JavaScript dialog or dismiss DOM overlays."""
+        act_lower = action.lower()
+        if act_lower in ("dismiss_overlays", "dismiss_banners"):
+            count = await self.dismiss_banners()
+            return {"action": action, "dismissed_count": count, "handled": True}
+
+        d_params: dict[str, Any] = {"accept": act_lower == "accept"}
         if prompt_text is not None:
             d_params["promptText"] = prompt_text
         await self.send("Page.handleJavaScriptDialog", d_params)
@@ -2017,6 +2079,7 @@ class CDPClient:
         user_data_dir: str | None = None,
         executable_path: str | None = None,
         extra_args: list[str] | None = None,
+        profile_name: str | None = None,
     ) -> dict[str, Any]:
         """Launch a dedicated browser instance with CDP and connect to it."""
         from .launcher import launch_browser
@@ -2035,6 +2098,7 @@ class CDPClient:
             user_data_dir=user_data_dir,
             executable_path=executable_path,
             extra_args=extra_args,
+            profile_name=profile_name,
         )
         self.managed_browser = bp
         self.port = bp.port

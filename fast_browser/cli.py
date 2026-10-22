@@ -84,12 +84,20 @@ async def run_cli():
     click_p = subparsers.add_parser("click", help="Click an element")
     click_p.add_argument("--ref", help="Element reference (e.g. @1)")
     click_p.add_argument("--selector", help="CSS selector")
+    click_p.add_argument(
+        "--wait-for", help="CSS selector or @ref to wait for after clicking"
+    )
 
     # fill
     fill_p = subparsers.add_parser("fill", help="Fill text into input")
     fill_p.add_argument("--ref", help="Element reference (e.g. @1)")
     fill_p.add_argument("--selector", help="CSS selector")
     fill_p.add_argument("--text", required=True, help="Text to fill")
+    fill_p.add_argument(
+        "--press-enter",
+        action="store_true",
+        help="Press Enter key immediately after filling",
+    )
 
     # paste
     paste_p = subparsers.add_parser(
@@ -412,7 +420,7 @@ async def run_cli():
     )
     dlg_p.add_argument(
         "--action",
-        choices=["accept", "dismiss"],
+        choices=["accept", "dismiss", "dismiss_overlays"],
         default="accept",
         help="Dialog action",
     )
@@ -435,6 +443,10 @@ async def run_cli():
         help="Run with visible browser window",
     )
     launch_p.add_argument("--user-data-dir", help="Custom user profile directory")
+    launch_p.add_argument(
+        "--profile-name",
+        help="Named persistent profile (e.g. 'default', 'work') stored in config directory",
+    )
 
     # wait-download
     dl_p = subparsers.add_parser(
@@ -477,6 +489,7 @@ async def run_cli():
             port=args.port,
             headless=args.headless,
             user_data_dir=args.user_data_dir,
+            profile_name=getattr(args, "profile_name", None),
         )
         print(json.dumps(res, ensure_ascii=False, indent=2))
         return
@@ -614,7 +627,14 @@ async def run_cli():
     elif args.command == "click":
         batch = BatchRunner(cdp)
         res = await batch.execute(
-            [{"action": "click", "ref": args.ref, "selector": args.selector}]
+            [
+                {
+                    "action": "click",
+                    "ref": args.ref,
+                    "selector": args.selector,
+                    "wait_for": getattr(args, "wait_for", None),
+                }
+            ]
         )
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
@@ -627,6 +647,7 @@ async def run_cli():
                     "ref": args.ref,
                     "selector": args.selector,
                     "text": args.text,
+                    "press_enter": getattr(args, "press_enter", False),
                 }
             ]
         )

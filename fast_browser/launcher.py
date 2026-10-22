@@ -130,6 +130,38 @@ def cleanup_stale_profiles(max_age_seconds: int = 21600) -> int:
     return cleaned
 
 
+def get_profiles_dir() -> str:
+    """Return base directory for persistent named profiles."""
+    return os.path.expanduser(
+        os.environ.get("FAST_BROWSER_PROFILES_DIR", "~/.config/fast-browser/profiles")
+    )
+
+
+def get_profile_dir(profile_name: str) -> str:
+    """Get absolute path to a named persistent profile."""
+    safe_name = "".join(
+        c for c in profile_name if c.isalnum() or c in ("-", "_")
+    ).strip()
+    if not safe_name:
+        safe_name = "default"
+    path = os.path.join(get_profiles_dir(), safe_name)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def list_profiles() -> list[str]:
+    """List existing persistent named profiles."""
+    base = get_profiles_dir()
+    if not os.path.isdir(base):
+        return []
+    try:
+        return sorted(
+            [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
+        )
+    except (OSError, PermissionError):
+        return []
+
+
 def validate_environment() -> dict[str, Any]:
     """Validate system and browser environment for automation readiness."""
     browser_path = find_browser_executable()
@@ -228,6 +260,7 @@ def launch_browser(
     executable_path: str | None = None,
     extra_args: list[str] | None = None,
     timeout: float = 15.0,
+    profile_name: str | None = None,
 ) -> BrowserProcess:
     """Launch a Chrome/Chromium instance with CDP remote debugging enabled.
 
@@ -238,6 +271,7 @@ def launch_browser(
         executable_path: Custom path to browser binary.
         extra_args: Additional command line flags.
         timeout: Seconds to wait for CDP endpoint to become ready.
+        profile_name: Named persistent profile (e.g. 'default', 'work') stored in config directory.
     """
     browser_bin = find_browser_executable(executable_path)
     if not browser_bin:
@@ -249,7 +283,10 @@ def launch_browser(
     target_port = port if (port and port > 0) else find_free_port()
 
     is_temp_dir = False
-    if not user_data_dir:
+    if profile_name:
+        user_data_dir = get_profile_dir(profile_name)
+        is_temp_dir = False
+    elif not user_data_dir:
         user_data_dir = tempfile.mkdtemp(prefix="fast_browser_profile_")
         is_temp_dir = True
     else:
