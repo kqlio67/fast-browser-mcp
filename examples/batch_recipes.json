@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Fast Browser Batch Recipes",
+  "recipes": {
+    "login_pipeline": {
+      "description": "Navigate, wait for network idle, fill credentials via paste, submit with trusted click, and capture snapshot",
+      "steps": [
+        {"action": "navigate", "url": "https://example.com/login"},
+        {"action": "wait_idle", "timeout": 5},
+        {"action": "paste", "selector": "input[name='username']", "text": "my_user"},
+        {"action": "paste", "selector": "input[name='password']", "text": "my_password"},
+        {"action": "click", "selector": "button[type='submit']", "trusted": true},
+        {"action": "wait_idle"},
+        {"action": "snapshot"}
+      ]
+    },
+    "stealth_verification": {
+      "description": "Enable stealth mode, set realistic viewport, navigate to target, and take full-page screenshot",
+      "steps": [
+        {"action": "stealth", "enabled": true},
+        {"action": "set_viewport", "width": 1920, "height": 1080},
+        {"action": "navigate", "url": "https://bot.sannysoft.com"},
+        {"action": "wait_idle"},
+        {"action": "wait", "ms": 2000},
+        {"action": "screenshot", "save_path": "sannysoft_result.png", "full_page": true}
+      ]
+    },
+    "network_audit": {
+      "description": "Block heavy media to accelerate load, navigate, and dump network traffic",
+      "steps": [
+        {"action": "block_resources", "block_images": true, "block_media": true, "block_fonts": true},
+        {"action": "navigate", "url": "https://example.com"},
+        {"action": "wait_idle"},
+        {"action": "export_traffic", "save_path": "traffic_audit.json"}
+      ]
+    }
+  }
+}
