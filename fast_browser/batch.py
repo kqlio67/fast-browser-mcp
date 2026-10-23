@@ -40,6 +40,7 @@ class BatchStep(TypedDict, total=False):
 
 
 VALID_ACTIONS: set[str] = {
+    "add_preload_script",
     "back",
     "block_resources",
     "block_urls",
@@ -47,6 +48,7 @@ VALID_ACTIONS: set[str] = {
     "cleanup_tabs",
     "clear_cache",
     "clear_cookies",
+    "clear_storage",
     "click",
     "clipboard",
     "console_logs",
@@ -55,8 +57,11 @@ VALID_ACTIONS: set[str] = {
     "dismiss_banners",
     "dismiss_dialogs",
     "double_click",
+    "download_path",
     "drag_and_drop",
+    "emulate_environment",
     "eval",
+    "execute_webmcp_tool",
     "export_session",
     "export_traffic",
     "extension_action",
@@ -65,9 +70,13 @@ VALID_ACTIONS: set[str] = {
     "fill",
     "fill_form",
     "find",
+    "find_in_page",
     "forward",
     "geolocation",
+    "get_cookies",
+    "get_css_styles",
     "get_html",
+    "get_indexeddb",
     "get_storage",
     "grant_permissions",
     "handle_dialog",
@@ -76,33 +85,46 @@ VALID_ACTIONS: set[str] = {
     "import_session",
     "indexeddb",
     "isolated_tab",
+    "list_extensions",
+    "list_webmcp_tools",
     "metrics",
-    "performance_metrics",
     "mouse_move",
     "mute",
+    "mute_tab",
     "navigate",
+    "network_get_response",
     "network_requests",
+    "network_throttling",
+    "new_isolated_tab",
+    "open_system_page",
     "paste",
     "pdf",
+    "performance_metrics",
     "permissions",
     "preload_script",
     "press_key",
+    "print_to_pdf",
     "reload",
+    "remove_preload_script",
     "right_click",
     "screenshot",
     "scroll",
     "select_option",
     "set_cookie",
+    "set_cpu_throttling",
     "set_download_path",
-    "download_path",
     "set_geolocation",
     "set_headers",
+    "set_ignore_certificate_errors",
+    "set_media_theme",
+    "set_page_zoom",
     "set_timezone",
     "set_user_agent",
     "set_viewport",
     "snapshot",
     "ssl_ignore",
     "stealth",
+    "stealth_mode",
     "system_info",
     "system_page",
     "theme",
@@ -111,7 +133,10 @@ VALID_ACTIONS: set[str] = {
     "upload_file",
     "wait",
     "wait_download",
+    "wait_for_download",
+    "wait_for_network_idle",
     "wait_idle",
+    "websocket_messages",
     "window",
     "ws_messages",
     "zoom",
@@ -165,6 +190,13 @@ class BatchRunner:
         if act not in VALID_ACTIONS:
             return f"Step {idx + 1}: unknown action '{action}'. Valid actions: {', '.join(sorted(VALID_ACTIONS))}"
 
+        # Reference format validation
+        ref_val = step.get("ref")
+        if ref_val is not None:
+            clean_ref = str(ref_val).replace("@", "")
+            if not clean_ref.isdigit():
+                return f"Step {idx + 1}: invalid ref '{ref_val}'. References must be formatted like '@1' or '@2'"
+
         # Action-specific parameter checks
         if act == "navigate" and not step.get("url"):
             return f"Step {idx + 1} ('navigate'): missing required 'url'"
@@ -174,11 +206,23 @@ class BatchRunner:
             or (step.get("x") is not None and step.get("y") is not None)
         ):
             return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
+        if act == "drag_and_drop" and not (
+            (step.get("from_ref") and step.get("to_ref"))
+            or (
+                step.get("start_x") is not None
+                and step.get("start_y") is not None
+                and step.get("end_x") is not None
+                and step.get("end_y") is not None
+            )
+        ):
+            return f"Step {idx + 1} ('drag_and_drop'): requires ('from_ref', 'to_ref') or ('start_x', 'start_y', 'end_x', 'end_y') coordinates"
         if act == "fill":
             if not (step.get("ref") or step.get("selector")):
                 return f"Step {idx + 1} ('fill'): requires 'ref' or 'selector' target"
             if step.get("text") is None:
                 return f"Step {idx + 1} ('fill'): missing 'text' to fill"
+        if act == "paste" and step.get("text") is None:
+            return f"Step {idx + 1} ('paste'): missing 'text' to paste"
         if act == "press_key" and not step.get("key"):
             return f"Step {idx + 1} ('press_key'): missing 'key' name"
         if act == "eval" and not (step.get("script") or step.get("expression")):
@@ -187,8 +231,14 @@ class BatchRunner:
             return f"Step {idx + 1} ('extract'): missing 'selector'"
         if act == "cdp_send" and not step.get("method"):
             return f"Step {idx + 1} ('cdp_send'): missing 'method'"
-        if act == "css_styles" and not (step.get("ref") or step.get("selector")):
-            return f"Step {idx + 1} ('css_styles'): requires 'ref' or 'selector'"
+        if act in ("css_styles", "get_css_styles") and not (
+            step.get("ref") or step.get("selector")
+        ):
+            return f"Step {idx + 1} ('{act}'): requires 'ref' or 'selector'"
+        if act in ("set_download_path", "download_path") and not step.get("path"):
+            return f"Step {idx + 1} ('{act}'): missing 'path'"
+        if act == "upload_file" and (not step.get("selector") or not step.get("files")):
+            return f"Step {idx + 1} ('upload_file'): requires 'selector' and 'files' list"
         if act == "block_urls" and not (step.get("patterns") or step.get("urls")):
             return f"Step {idx + 1} ('block_urls'): missing 'patterns' or 'urls' list"
         return None
@@ -292,8 +342,11 @@ class BatchRunner:
                             trusted=trusted,
                         )
                         step_res["detail"] = f"Clicked selector '{selector}'"
+                    elif step.get("x") is not None and step.get("y") is not None:
+                        await self.cdp.trusted_click(float(step["x"]), float(step["y"]))
+                        step_res["detail"] = f"Clicked at ({step['x']}, {step['y']}) (trusted)"
                     else:
-                        raise ValueError("Click action requires 'ref' or 'selector'")
+                        raise ValueError("Click action requires 'ref', 'selector', or (x, y) coordinates")
 
                     wait_for = step.get("wait_for")
                     if wait_for:
@@ -690,8 +743,13 @@ class BatchRunner:
                         }})()"""
                         await self.cdp.evaluate(js)
                         step_res["detail"] = f"Hovered selector '{selector}'"
+                    elif step.get("x") is not None and step.get("y") is not None:
+                        await self.cdp.mouse_move(float(step["x"]), float(step["y"]))
+                        step_res["detail"] = f"Hovered at ({step['x']}, {step['y']})"
                     else:
-                        raise ValueError("Hover action requires 'ref' or 'selector'")
+                        raise ValueError(
+                            "Hover action requires 'ref', 'selector', or (x, y) coordinates"
+                        )
                     step_res["status"] = "ok"
 
                 elif action == "set_viewport":
@@ -778,7 +836,7 @@ class BatchRunner:
                     else:
                         step_res["html"] = html[:10000]
 
-                elif action == "pdf":
+                elif action in ("pdf", "print_to_pdf"):
                     path = step.get("save_path", "page.pdf")
                     safe_path = self.validate_path(path, for_write=True)
                     b64 = await self.cdp.print_to_pdf(
@@ -809,6 +867,10 @@ class BatchRunner:
 
                 elif action == "wait":
                     ms = step.get("ms")
+                    if ms is None and "seconds" in step:
+                        ms = int(float(step["seconds"]) * 1000)
+                    elif ms is None and "duration" in step:
+                        ms = int(float(step["duration"]))
                     selector = step.get("selector")
                     text = step.get("text")
                     if ms:
@@ -873,7 +935,7 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["requests"] = reqs
 
-                elif action == "ws_messages":
+                elif action in ("ws_messages", "websocket_messages"):
                     direction = step.get("direction")
                     limit = step.get("limit", 20)
                     frames = self.cdp.network.list_ws_frames(
@@ -923,7 +985,7 @@ class BatchRunner:
                         step_res["detail"] = f"Window bounds: {win.get('bounds')}"
                     step_res["status"] = "ok"
 
-                elif action == "system_page":
+                elif action in ("system_page", "open_system_page"):
                     page = step.get("page") or step.get("url")
                     if not page:
                         raise ValueError("system_page action requires 'page' or 'url'")
@@ -932,7 +994,7 @@ class BatchRunner:
                     step_res["detail"] = f"System page {page!r}: {res.get('status')}"
                     step_res["target"] = res.get("target")
 
-                elif action == "extensions":
+                elif action in ("extensions", "list_extensions"):
                     exts = await self.cdp.list_extensions()
                     step_res["status"] = "ok"
                     step_res["extensions"] = exts
@@ -940,7 +1002,11 @@ class BatchRunner:
 
                 elif action == "extension_action":
                     ext_id = step.get("id") or step.get("extension_id")
-                    ext_action = step.get("action_type") or step.get("subaction")
+                    ext_action = (
+                        step.get("action_type")
+                        or step.get("subaction")
+                        or step.get("action")
+                    )
                     if not ext_id or not ext_action:
                         raise ValueError(
                             "extension_action requires 'id' and 'action_type' ('enable', 'disable', 'reload', 'options', 'popup')"
@@ -949,7 +1015,7 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["result"] = res
 
-                elif action == "set_download_path":
+                elif action in ("set_download_path", "download_path"):
                     dl_path = step.get("path")
                     if not dl_path:
                         raise ValueError("set_download_path requires 'path'")
@@ -991,20 +1057,26 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["history"] = hist
 
-                elif action == "preload_script":
+                elif action in ("preload_script", "add_preload_script"):
                     source = step.get("source", "")
                     ident = await self.cdp.add_preload_script(source)
                     step_res["status"] = "ok"
                     step_res["identifier"] = ident
                     step_res["detail"] = f"Added preload script (id={ident})"
 
-                elif action == "stealth":
+                elif action == "remove_preload_script":
+                    ident = step.get("identifier") or step.get("id", "")
+                    await self.cdp.remove_preload_script(ident)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Removed preload script (id={ident})"
+
+                elif action in ("stealth", "stealth_mode"):
                     enabled = step.get("enabled", True)
                     res = await self.cdp.set_stealth_mode(enabled=enabled)
                     step_res["status"] = "ok"
                     step_res["stealth"] = res
 
-                elif action == "throttling":
+                elif action in ("throttling", "network_throttling"):
                     prof = step.get("profile", "none")
                     res = await self.cdp.set_network_throttling(
                         profile=prof,
@@ -1016,19 +1088,19 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["throttling"] = res
 
-                elif action == "theme":
+                elif action in ("theme", "set_media_theme"):
                     theme = step.get("theme", "dark")
                     res = await self.cdp.set_media_theme(theme=theme)
                     step_res["status"] = "ok"
                     step_res["theme"] = res
 
-                elif action == "zoom":
+                elif action in ("zoom", "set_page_zoom"):
                     scale = step.get("scale", 1.0)
                     res = await self.cdp.set_page_zoom(scale=scale)
                     step_res["status"] = "ok"
                     step_res["zoom"] = res
 
-                elif action == "mute":
+                elif action in ("mute", "mute_tab"):
                     muted = step.get("muted", True)
                     res = await self.cdp.set_audio_muted(muted=muted)
                     step_res["status"] = "ok"
@@ -1045,7 +1117,7 @@ class BatchRunner:
                         step_res["clipboard_text"] = clip_text
                     step_res["status"] = "ok"
 
-                elif action == "find":
+                elif action in ("find", "find_in_page"):
                     query = step.get("query", "")
                     res = await self.cdp.find_in_page(
                         query=query, scroll_to_first=step.get("scroll", True)
@@ -1053,18 +1125,18 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["find_result"] = res
 
-                elif action == "indexeddb":
+                elif action in ("indexeddb", "get_indexeddb"):
                     idb = await self.cdp.get_indexeddb_data()
                     step_res["status"] = "ok"
                     step_res["indexeddb"] = idb
 
-                elif action == "ssl_ignore":
+                elif action in ("ssl_ignore", "set_ignore_certificate_errors"):
                     ignore = step.get("ignore", True)
                     res = await self.cdp.set_ignore_certificate_errors(ignore=ignore)
                     step_res["status"] = "ok"
                     step_res["ssl_ignore"] = res
 
-                elif action == "wait_idle":
+                elif action in ("wait_idle", "wait_for_network_idle"):
                     idle_time = step.get("idle_time", 0.5)
                     timeout = step.get("timeout", 10.0)
                     ok = await self.cdp.wait_for_network_idle(
@@ -1093,7 +1165,7 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["cleanup"] = res
 
-                elif action == "metrics":
+                elif action in ("metrics", "performance_metrics"):
                     res = await self.cdp.get_performance_metrics()
                     step_res["status"] = "ok"
                     step_res["metrics"] = res
@@ -1134,20 +1206,20 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["cdp_result"] = res
 
-                elif action == "css_styles":
+                elif action in ("css_styles", "get_css_styles"):
                     selector = step.get("selector")
                     ref = step.get("ref")
                     res = await self.cdp.get_css_styles(selector=selector, ref=ref)
                     step_res["status"] = "ok"
                     step_res["css_styles"] = res
 
-                elif action == "isolated_tab":
+                elif action in ("isolated_tab", "new_isolated_tab"):
                     url = step.get("url", "about:blank")
                     res = await self.cdp.new_isolated_tab(url=url)
                     step_res["status"] = "ok"
                     step_res["isolated_tab"] = res
 
-                elif action == "cpu_throttling":
+                elif action in ("cpu_throttling", "set_cpu_throttling"):
                     rate = step.get("rate", 1.0)
                     res = await self.cdp.set_cpu_throttling(rate=rate)
                     step_res["status"] = "ok"
@@ -1178,7 +1250,7 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Filled {len(elements)} form elements"
 
-                elif action == "wait_download":
+                elif action in ("wait_download", "wait_for_download"):
                     dir_path = step.get("directory", "downloads")
                     safe_dir = self.validate_path(dir_path, for_write=True)
                     pat = step.get("filename_pattern")
@@ -1188,6 +1260,62 @@ class BatchRunner:
                     )
                     step_res["status"] = "ok"
                     step_res["download"] = res
+
+                elif action == "clear_storage":
+                    if step.get("clear_cache", True):
+                        await self.cdp.clear_cache()
+                    if step.get("clear_cookies", True):
+                        await self.cdp.clear_cookies()
+                    step_res["status"] = "ok"
+                    step_res["detail"] = "Cleared cache and cookies"
+
+                elif action == "emulate_environment":
+                    if "latitude" in step and "longitude" in step:
+                        await self.cdp.set_geolocation(
+                            step["latitude"], step["longitude"]
+                        )
+                    if "timezone_id" in step or "timezone" in step:
+                        tz_val = step.get("timezone_id") or step.get("timezone", "UTC")
+                        await self.cdp.set_timezone(tz_val)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = "Emulated environment"
+
+                elif action == "get_cookies":
+                    cookies = await self.cdp.get_cookies(urls=step.get("urls"))
+                    step_res["status"] = "ok"
+                    step_res["cookies"] = cookies
+
+                elif action == "network_get_response":
+                    req_id = step.get("request_id", "")
+                    details = self.cdp.network.get_request_details(req_id)
+                    body_res = await self.cdp.get_response_body(req_id)
+                    step_res["status"] = "ok"
+                    step_res["request"] = details
+                    step_res["response_body"] = body_res
+
+                elif action == "list_webmcp_tools":
+                    script = """
+                    if (navigator.modelContext && typeof navigator.modelContext.getTools === 'function') {
+                        return await navigator.modelContext.getTools();
+                    }
+                    throw new Error('WebMCP is not supported or not exposed on this page.');
+                    """
+                    val = await self.cdp.evaluate(script, await_promise=True)
+                    step_res["status"] = "ok"
+                    step_res["tools"] = val
+
+                elif action == "execute_webmcp_tool":
+                    name = str(step.get("name", ""))
+                    tool_args = step.get("arguments", {})
+                    script = f"""
+                    if (navigator.modelContext && typeof navigator.modelContext.executeTool === 'function') {{
+                        return await navigator.modelContext.executeTool({json.dumps(name)}, {json.dumps(tool_args)});
+                    }}
+                    throw new Error('WebMCP is not supported or not exposed on this page.');
+                    """
+                    val = await self.cdp.evaluate(script, await_promise=True)
+                    step_res["status"] = "ok"
+                    step_res["result"] = val
 
                 elif action == "export_session":
                     session_data = await self.cdp.export_session()

@@ -357,9 +357,51 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tabs_res["mimeType"], "application/json")
         self.assertIn("Test", tabs_res["text"])
 
-        prompt_res = self.server.handle_prompt_get("web-research", {"query": "AI"})
-        self.assertIn("messages", prompt_res)
-        self.assertIn("AI", prompt_res["messages"][0]["content"]["text"])
+        # Test browser://active/snapshot returns string formatted text
+        self.server.snapshot.capture_formatted = AsyncMock(return_value="=== Page: Test ===\n@1 [button] 'Click'")
+        snap_res = await self.server.handle_resource_read("browser://active/snapshot")
+        self.assertEqual(snap_res["mimeType"], "text/plain")
+        self.assertIsInstance(snap_res["text"], str)
+        self.assertIn("@1 [button]", snap_res["text"])
+
+        # Test browser://active/dom returns HTML
+        self.server.cdp.get_html = AsyncMock(return_value="<html><body>Hello</body></html>")
+        dom_res = await self.server.handle_resource_read("browser://active/dom")
+        self.assertEqual(dom_res["mimeType"], "text/html")
+        self.assertEqual(dom_res["text"], "<html><body>Hello</body></html>")
+
+        # Test browser://console
+        self.server.cdp.console.list_logs = MagicMock(return_value=[{"message": "log1"}])
+        console_res = await self.server.handle_resource_read("browser://console")
+        self.assertEqual(console_res["mimeType"], "application/json")
+        self.assertIn("log1", console_res["text"])
+
+        # Test browser://network
+        self.server.cdp.network.list_requests = MagicMock(return_value=[{"id": "req1"}])
+        net_res = await self.server.handle_resource_read("browser://network")
+        self.assertEqual(net_res["mimeType"], "application/json")
+        self.assertIn("req1", net_res["text"])
+
+        # Test unknown resource URI raises ValueError
+        with self.assertRaises(ValueError):
+            await self.server.handle_resource_read("browser://unknown_xyz")
+
+        # Test prompts
+        p1 = self.server.handle_prompt_get("web-research", {"query": "AI"})
+        self.assertIn("messages", p1)
+        self.assertIn("AI", p1["messages"][0]["content"]["text"])
+
+        p2 = self.server.handle_prompt_get("form-automation", {"url": "https://example.com"})
+        self.assertIn("messages", p2)
+        self.assertIn("https://example.com", p2["messages"][0]["content"]["text"])
+
+        p3 = self.server.handle_prompt_get("network-debugger", {"url": "https://api.com"})
+        self.assertIn("messages", p3)
+        self.assertIn("https://api.com", p3["messages"][0]["content"]["text"])
+
+        # Test unknown prompt raises ValueError
+        with self.assertRaises(ValueError):
+            self.server.handle_prompt_get("unknown_prompt_xyz", {})
 
 
 if __name__ == "__main__":

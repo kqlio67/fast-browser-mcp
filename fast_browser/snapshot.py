@@ -31,7 +31,7 @@ SNAPSHOT_JS = r"""(() => {
     }
 
     function extractElementText(el) {
-        let t = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+        let t = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
         if (t) return t;
 
         t = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt');

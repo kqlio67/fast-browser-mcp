@@ -240,7 +240,9 @@ class NetworkMonitor:
             if filter_type and filter_type.lower() != "all":
                 if req.get("type", "").lower() != filter_type.lower():
                     continue
-            if url_pattern and url_pattern.lower() not in req.get("url", "").lower():
+            if url_pattern and url_pattern.lower() not in (
+                req.get("url") or ""
+            ).lower():
                 continue
 
             results.append(

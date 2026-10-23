@@ -2313,7 +2313,7 @@ class MCPServer:
             }
         elif uri == "browser://active/snapshot":
             await self.ensure_connected()
-            snap = await self.snapshot.capture()
+            snap = await self.snapshot.capture_formatted()
             return {
                 "uri": uri,
                 "mimeType": "text/plain",

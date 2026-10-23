@@ -10,6 +10,7 @@ import unittest
 import requests
 
 from fast_browser.cdp import CDPClient
+from fast_browser.launcher import sandbox_must_be_disabled
 
 
 class TestBrowserManager:
@@ -55,6 +56,9 @@ class TestBrowserManager:
             "--mute-audio",
             "about:blank",
         ]
+
+        if sandbox_must_be_disabled():
+            cmd.append("--no-sandbox")
 
         cls._proc = subprocess.Popen(
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL

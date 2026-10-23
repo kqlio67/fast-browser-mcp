@@ -7,11 +7,7 @@ from fast_browser.batch import BatchRunner
 from fast_browser.cdp import CDPClient
 from fast_browser.network import InFlightTracker, NetworkMonitor
 from fast_browser.snapshot import PageSnapshot
-
-try:
-    from .base import BaseBrowserTest
-except ImportError:
-    from base import BaseBrowserTest
+from tests.base import BaseBrowserTest
 
 
 class TestArchitecture(BaseBrowserTest):

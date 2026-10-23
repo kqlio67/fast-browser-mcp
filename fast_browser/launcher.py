@@ -228,6 +228,10 @@ class BrowserProcess:
                     self.proc.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     self.proc.kill()
+                    try:
+                        self.proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        pass
         except OSError as e:
             logger.debug(f"Error terminating browser process: {e}")
 
@@ -236,6 +240,12 @@ class BrowserProcess:
                 shutil.rmtree(self.user_data_dir, ignore_errors=True)
             except OSError as e:
                 logger.debug(f"Error removing temp user data dir: {e}")
+
+        try:
+            if self in _active_browsers:
+                _active_browsers.remove(self)
+        except Exception:
+            pass
 
     def __del__(self):
         self.terminate()

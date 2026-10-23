@@ -184,7 +184,17 @@ Add Fast Browser MCP as an MCP stdio server executing:
 
 ---
 
-## 🛠️ Complete Tool Reference (69 Tools)
+## 🛠️ Complete Tool Reference (75 Tools)
+
+### 🚀 Process & Lifecycle Management
+| Tool | Description |
+|---|---|
+| `browser_connect` | Connect dynamically to any running browser or Electron instance by host and port (e.g. port 9222 or custom devtools port) |
+| `browser_launch` | Launch a managed Chromium/Chrome instance (headless/headed, custom port, proxy, and user data directory) |
+| `browser_close_browser` | Terminate and clean up the launched or managed browser process |
+| `browser_wait_for_download` | Wait for a file download to complete in the download directory within a given timeout |
+| `browser_export_session` | Export active session state (cookies, localStorage, sessionStorage, active URL) to JSON file or string |
+| `browser_import_session` | Restore session state (cookies, localStorage, sessionStorage, navigation) from exported data |
 
 ### 📑 Tab & Navigation
 | Tool | Description |
@@ -203,7 +213,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | Tool | Description |
 |---|---|
 | `browser_click` | Click an element by snapshot ref (`@1`, `@2`) or CSS selector (supports `trusted: true` for native CDP hardware input with `isTrusted: true`) |
-| `browser_fill` | Type text into an input element by ref or CSS selector (supports `paste: true` for instant CDP text insertion) |
+| `browser_fill` | Type text into an input element by ref or CSS selector (supports `paste: true` for instant CDP text insertion, `press_enter: true`, and auto-detects `contenteditable` fields) |
 | `browser_fill_form` | Fill multiple form elements in one fast batch execution |
 | `browser_press_key` | Dispatch keyboard key event (`Enter`, `Escape`, `Tab`, `ArrowDown`, etc.) |
 | `browser_scroll` | Scroll page by $(\Delta x, \Delta y)$ or scroll element into view |
@@ -237,7 +247,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 ### ⚡ High-Speed Batch Runner & Resilience
 | Tool | Description |
 |---|---|
-| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports: `navigate`, `click`, `fill`, `press_key`, `scroll`, `hover`, `mouse`, `wait`, `wait_idle`, `block_resources`, `metrics`, `geolocation`, `timezone`, `permissions`, `cleanup_tabs`, `eval`, `extract`, `snapshot`, `screenshot`, `pdf`, `window`, `system_page`, `extensions`, `back`, `forward`, `history`, `stealth`, `throttling`, `theme`, `zoom`, `mute`, `find`, `clipboard`, `indexeddb`, `ssl_ignore`, `cdp_send`, `css_styles`, `isolated_tab`, `cpu_throttling`, `handle_dialog`, etc. |
+| `browser_batch` | **Ultra-fast local batch execution**: runs an array of actions in a single round-trip without model latency. Supports coordinate clicking/hovering (`(x, y)`), `duration`/`seconds` wait, `dismiss_banners`, `wait_for`, and 100% action parity across all 100 CDP tools and actions. |
 | `browser_wait_for_network_idle` | Wait until all in-flight network requests cease for a stable duration |
 | `browser_block_resources` | Block images, video/audio media, web fonts, or tracking scripts/ads for up to 10x page load speedup |
 | `browser_block_urls` | Block specific wildcard URL patterns (e.g. `*.png`, `*analytics*`, `*ads*`) to accelerate page load times |
@@ -285,13 +295,39 @@ Add Fast Browser MCP as an MCP stdio server executing:
 
 ---
 
+## 📦 Built-in MCP Resources & Prompts
+
+Fast Browser MCP provides native Model Context Protocol (MCP) Resources and Prompts for seamless integration with MCP clients (Antigravity, Claude Desktop, Cursor, etc.).
+
+### 📑 MCP Resources
+Directly read live browser state as structured MCP resources without executing tool calls:
+
+| Resource URI | MIME Type | Description |
+|---|---|---|
+| `browser://tabs` | `application/json` | Real-time list of all open browser tabs (ID, title, URL, WebSocket debugger URL) |
+| `browser://active/snapshot` | `text/plain` | Token-efficient formatted accessibility snapshot of the currently focused tab |
+| `browser://active/dom` | `text/html` | Complete raw HTML document of the active page |
+| `browser://console` | `application/json` | Captured browser console output (logs, warnings, errors, exceptions) |
+| `browser://network` | `application/json` | Ring-buffer captured HTTP/XHR network requests and traffic summary |
+
+### 💡 MCP Prompts
+Pre-configured agent workflows:
+
+| Prompt Name | Description |
+|---|---|
+| `web-research` | Systematic web browsing workflow: search, navigate, snapshot, and extract information |
+| `form-automation` | Structured guide for safely inspecting, validating, and filling multi-step web forms |
+| `network-debugger` | Guided workflow to inspect network API requests and WebSocket frames for reverse engineering |
+
+---
+
 ## 💻 CLI Usage
 
 Fast Browser MCP also includes a complete standalone CLI for manual operations and shell scripting:
 
 ```bash
-# List open tabs
-python3 -m fast_browser.cli list-tabs
+# List open tabs (optionally with a persistent profile)
+python3 -m fast_browser.cli --profile my_session list-tabs
 
 # Take a snapshot of a tab
 python3 -m fast_browser.cli --tab mmobitva snapshot

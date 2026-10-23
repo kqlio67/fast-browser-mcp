@@ -2130,10 +2130,10 @@ class CDPClient:
         if not os.path.isdir(directory):
             raise FileNotFoundError(f"Download directory does not exist: {directory}")
 
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         initial_files = set(os.listdir(directory))
 
-        while asyncio.get_event_loop().time() - start_time < timeout:
+        while asyncio.get_running_loop().time() - start_time < timeout:
             current_files = set(os.listdir(directory))
             new_candidates = [
                 f

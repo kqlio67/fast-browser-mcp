@@ -3,11 +3,7 @@ import json
 import unittest
 
 from fast_browser.batch import BatchRunner
-
-try:
-    from .base import BaseBrowserTest
-except ImportError:
-    from base import BaseBrowserTest
+from tests.base import BaseBrowserTest
 
 
 class TestSuperpowers(BaseBrowserTest):
