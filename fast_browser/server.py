@@ -2717,7 +2717,7 @@ class MCPServer:
                             },
                             "serverInfo": {
                                 "name": "fast-browser-mcp",
-                                "version": "0.11.0",
+                                "version": "0.12.0",
                             },
                         },
                     }

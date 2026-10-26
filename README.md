@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![MCP Version](https://img.shields.io/badge/MCP%20Spec-2024--11--05-orange.svg)](https://modelcontextprotocol.io/)
 [![Protocol](https://img.shields.io/badge/CDP-Native%20WebSocket-purple.svg)](https://chromedevtools.github.io/devtools-protocol/)
-[![Version](https://img.shields.io/badge/version-0.11.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue.svg)](https://github.com/kqlio67/fast-browser-mcp)
 
 Universal, ultra-fast **Model Context Protocol (MCP)** server and command-line interface for browser automation powered directly by the **Chrome DevTools Protocol (CDP)**.
 

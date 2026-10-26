@@ -13,8 +13,8 @@ from fast_browser.snapshot import SNAPSHOT_JS
 
 class TestAnalysisFixes(unittest.TestCase):
     def test_version_match(self):
-        """Ensure __version__ in __init__.py matches 0.11.0."""
-        self.assertEqual(fast_browser.__version__, "0.11.0")
+        """Ensure __version__ in __init__.py matches 0.12.0."""
+        self.assertEqual(fast_browser.__version__, "0.12.0")
 
     def test_network_monitor_none_url(self):
         """Ensure list_requests with url_pattern does not crash when request url is None."""
