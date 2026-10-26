@@ -14,12 +14,12 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
 
     def test_tool_count_and_exact_match(self):
         self.assertEqual(
-            len(TOOLS), 75, "Expected exactly 75 registered tools in TOOLS"
+            len(TOOLS), 81, "Expected exactly 81 registered tools in TOOLS"
         )
         self.assertEqual(
             len(TOOL_REGISTRY),
-            75,
-            "Expected exactly 75 registered handlers in TOOL_REGISTRY",
+            81,
+            "Expected exactly 81 registered handlers in TOOL_REGISTRY",
         )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())

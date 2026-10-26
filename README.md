@@ -184,7 +184,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 
 ---
 
-## 🛠️ Complete Tool Reference (75 Tools)
+## 🛠️ Complete Tool Reference (81 Tools)
 
 ### 🚀 Process & Lifecycle Management
 | Tool | Description |
@@ -233,10 +233,15 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_print_to_pdf` | Print page to PDF file with landscape/background options |
 | `browser_eval` | Evaluate arbitrary JavaScript expressions in the page context |
 
-### 🛠️ DevTools Superpowers & Deep Inspection (v0.10.0)
+### 🛠️ DevTools Superpowers & Deep Inspection (v0.12.0)
 | Tool | Description |
 |---|---|
 | `browser_cdp_send` | **Universal CDP Raw Dispatcher**: Execute any of the 1,000+ Chrome DevTools Protocol commands directly (e.g. `DOM.enable`, `Storage.getCookies`, `Emulation.setDeviceMetricsOverride`, `Security.enable`, etc.) |
+| `browser_get_event_listeners` | **Native Event Listener Inspection**: Inspect native DOM event listeners (click, submit, change, keydown, custom) via CDP `DOMDebugger` with handler source location and flags |
+| `browser_observe_coverage` | **V8 Code Coverage Profiling**: Measure executed JS functions and code ranges in real time during an observation window |
+| `browser_start_coverage` | Start precise V8 JavaScript code coverage collection across subsequent browser actions |
+| `browser_stop_coverage` | Stop V8 coverage collection and return filtered executed functions and call counts |
+| `browser_compare_screenshots` | **Deterministic Visual Diffing**: Compare two screenshots/PNGs with RGBA pixel delta, changed ratio, and bounding box without Vision LLM cost |
 | `browser_list_webmcp_tools` | List WebMCP tools exposed by the web page |
 | `browser_execute_webmcp_tool` | Execute a WebMCP tool exposed by the web page |
 | `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, bounding rect, and attached event listeners for any element by `@ref` or CSS selector |
@@ -257,15 +262,16 @@ Add Fast Browser MCP as an MCP stdio server executing:
 ### 📡 Network, WebSockets & Storage
 | Tool | Description |
 |---|---|
-| `browser_network_requests` | List captured HTTP/XHR/Fetch requests filtered by type or URL pattern |
+| `browser_network_requests` | List captured HTTP/XHR/Fetch requests filtered by type or URL pattern (with optional secrets redaction) |
 | `browser_network_get_response` | Inspect headers, POST payload, and retrieve server response bodies |
 | `browser_websocket_messages` | Monitor real-time WebSocket frames (`sent` / `received`) |
 | `browser_get_cookies` | Retrieve all cookies and authentication tokens for current origin |
 | `browser_set_cookie` | Inject cookies into the browser context |
-| `browser_get_storage` | Inspect and dump `localStorage` and `sessionStorage` |
+| `browser_get_storage` | Inspect and dump `localStorage`, `sessionStorage`, and `cacheStorage` |
+| `browser_get_cache_storage` | Inspect PWA and Service Worker CacheStorage entries and cached responses |
 | `browser_get_indexeddb` | Inspect all IndexedDB databases, version numbers, and object store names |
 | `browser_clear_storage` | Clear browser cache and/or cookies |
-| `browser_export_traffic` | Export captured HTTP & WebSocket traffic into a structured JSON file |
+| `browser_export_traffic` | Export captured HTTP & WebSocket traffic into JSON or standards-compliant HAR 1.2 format with automated secrets redaction |
 
 ### 🖥️ Browser & System Management
 | Tool | Description |

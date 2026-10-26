@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import time
 
 import requests
 import websockets
@@ -831,7 +832,11 @@ class CDPClient:
         }})()"""
         return await self.evaluate(js)
 
-    async def get_storage(self) -> dict[str, Any]:
+    async def get_storage(self, storage_type: str = "all") -> dict[str, Any]:
+        st = (storage_type or "all").lower()
+        if st == "cache":
+            return await self.get_cache_storage()
+
         js = """(() => {
             const local = {};
             for (let i = 0; i < localStorage.length; i++) {
@@ -845,7 +850,20 @@ class CDPClient:
             }
             return { localStorage: local, sessionStorage: session };
         })()"""
-        return await self.evaluate(js)
+        res = await self.evaluate(js)
+
+        if st == "local":
+            return {"localStorage": res.get("localStorage", {})}
+        elif st == "session":
+            return {"sessionStorage": res.get("sessionStorage", {})}
+
+        # "all": include local, session, and cache storage
+        try:
+            cache_info = await self.get_cache_storage()
+            res["cacheStorage"] = cache_info.get("caches", [])
+        except Exception:
+            res["cacheStorage"] = []
+        return res
 
     async def set_viewport(
         self,
@@ -2213,5 +2231,308 @@ class CDPClient:
             "cookies_count": len(cookies),
             "localStorage_keys": len(local_storage),
             "sessionStorage_keys": len(session_storage),
+        }
+
+    async def get_event_listeners(
+        self,
+        selector: str | None = None,
+        ref: str | None = None,
+        depth: int = 1,
+        ancestors: bool = False,
+    ) -> dict[str, Any]:
+        """Inspect DOM event listeners attached to an element using CDP DOMDebugger."""
+        session_id = None
+        target_desc = ""
+        object_group = f"fb_listeners_{int(time.time()*1000)}"
+
+        if ref is not None:
+            id_num = int(str(ref).replace("@", ""))
+            session_id = self.ref_session_map.get(id_num)
+            target_el = f"window.__fb_refs && window.__fb_refs[{id_num}]"
+            target_desc = f"ref {ref}"
+        elif selector:
+            target_el = f"document.querySelector({json.dumps(selector)})"
+            target_desc = f"selector {selector}"
+        elif ancestors:
+            target_el = "window"
+            target_desc = "window"
+        else:
+            raise ValueError(
+                "Must provide either 'selector' or 'ref' (or ancestors=True)"
+            )
+
+        # Evaluate to obtain remote object
+        eval_res = await self.send(
+            "Runtime.evaluate",
+            {
+                "expression": target_el,
+                "returnByValue": False,
+                "objectGroup": object_group,
+            },
+            session_id=session_id,
+        )
+
+        res_obj = eval_res.get("result", {})
+        if res_obj.get("subtype") == "null" or "objectId" not in res_obj:
+            await self.send(
+                "Runtime.releaseObjectGroup",
+                {"objectGroup": object_group},
+                session_id=session_id,
+            )
+            return {
+                "status": "not_found",
+                "message": f"Element not found for {target_desc}",
+                "listeners": [],
+            }
+
+        object_id = res_obj["objectId"]
+
+        try:
+            listeners_resp = await self.send(
+                "DOMDebugger.getEventListeners",
+                {"objectId": object_id, "depth": depth},
+                session_id=session_id,
+            )
+        finally:
+            await self.send(
+                "Runtime.releaseObjectGroup",
+                {"objectGroup": object_group},
+                session_id=session_id,
+            )
+
+        raw_listeners = listeners_resp.get("listeners", [])
+        formatted_listeners: list[dict[str, Any]] = []
+
+        for listener in raw_listeners:
+            handler = listener.get("handler", {})
+            desc = handler.get("description", "")
+            if len(desc) > 300:
+                desc = desc[:300] + "... [truncated]"
+
+            formatted_listeners.append(
+                {
+                    "type": listener.get("type"),
+                    "useCapture": listener.get("useCapture", False),
+                    "passive": listener.get("passive", False),
+                    "once": listener.get("once", False),
+                    "scriptId": listener.get("scriptId", ""),
+                    "lineNumber": listener.get("lineNumber", 0),
+                    "columnNumber": listener.get("columnNumber", 0),
+                    "handler": desc,
+                    "backendNodeId": listener.get("backendNodeId"),
+                }
+            )
+
+        return {
+            "status": "success",
+            "target": target_desc,
+            "listeners_count": len(formatted_listeners),
+            "listeners": formatted_listeners,
+        }
+
+    async def start_coverage(
+        self, detailed: bool = True, call_count: bool = True
+    ) -> dict[str, Any]:
+        """Start precise V8 code coverage measurement."""
+        await self.send("Profiler.enable")
+        await self.send(
+            "Profiler.startPreciseCoverage",
+            {"callCount": call_count, "detailed": detailed},
+        )
+        return {
+            "status": "started",
+            "detailed": detailed,
+            "call_count": call_count,
+        }
+
+    async def stop_coverage(
+        self, url_filter: str | None = None, only_executed: bool = True
+    ) -> dict[str, Any]:
+        """Stop precise V8 code coverage measurement and return formatted results."""
+        cov_res = await self.send("Profiler.takePreciseCoverage")
+        await self.send("Profiler.stopPreciseCoverage")
+        await self.send("Profiler.disable")
+
+        scripts_data = cov_res.get("result", [])
+        filtered_scripts: list[dict[str, Any]] = []
+        total_executed_funcs = 0
+
+        for s in scripts_data:
+            url = s.get("url", "")
+            if url_filter and url_filter.lower() not in url.lower():
+                continue
+
+            functions = s.get("functions", [])
+            executed_funcs = []
+            for f in functions:
+                ranges = f.get("ranges", [])
+                hit_ranges = [r for r in ranges if r.get("count", 0) > 0]
+                if only_executed and not hit_ranges:
+                    continue
+
+                total_count = sum(r.get("count", 0) for r in hit_ranges)
+                executed_funcs.append(
+                    {
+                        "name": f.get("functionName") or "(anonymous)",
+                        "isBlockCoverage": f.get("isBlockCoverage", False),
+                        "callCount": total_count,
+                        "ranges": hit_ranges if only_executed else ranges,
+                    }
+                )
+
+            if executed_funcs:
+                total_executed_funcs += len(executed_funcs)
+                filtered_scripts.append(
+                    {
+                        "scriptId": s.get("scriptId"),
+                        "url": url or "(inline)",
+                        "functions_count": len(executed_funcs),
+                        "functions": executed_funcs,
+                    }
+                )
+
+        return {
+            "status": "stopped",
+            "timestamp": cov_res.get("timestamp"),
+            "total_scripts": len(filtered_scripts),
+            "total_executed_functions": total_executed_funcs,
+            "scripts": filtered_scripts,
+        }
+
+    async def observe_coverage(
+        self,
+        duration_ms: int = 500,
+        detailed: bool = True,
+        call_count: bool = True,
+        url_filter: str | None = None,
+        only_executed: bool = True,
+    ) -> dict[str, Any]:
+        """Observe V8 code coverage during an execution window."""
+        await self.start_coverage(detailed=detailed, call_count=call_count)
+        if duration_ms > 0:
+            await asyncio.sleep(duration_ms / 1000.0)
+        return await self.stop_coverage(
+            url_filter=url_filter, only_executed=only_executed
+        )
+
+    async def get_cache_storage(
+        self,
+        cache_name: str | None = None,
+        limit: int = 50,
+        include_response_body: bool = False,
+    ) -> dict[str, Any]:
+        """Inspect CacheStorage entries and cached responses via CDP CacheStorage domain."""
+        origin = ""
+        try:
+            origin = await self.evaluate("window.location.origin")
+        except Exception:
+            pass
+
+        caches_list: list[dict[str, Any]] = []
+
+        if origin and not origin.startswith("about:"):
+            try:
+                names_res = await self.send(
+                    "CacheStorage.requestCacheNames",
+                    {"securityOrigin": origin},
+                )
+                raw_caches = names_res.get("caches", [])
+                for c in raw_caches:
+                    c_id = c.get("cacheId", "")
+                    c_name = c.get("cacheName", "")
+                    if cache_name and cache_name.lower() != c_name.lower():
+                        continue
+
+                    entries_res = await self.send(
+                        "CacheStorage.requestEntries",
+                        {"cacheId": c_id, "skipCount": 0, "pageSize": limit},
+                    )
+                    entries = entries_res.get("cacheDataEntries", [])
+                    formatted_entries = []
+
+                    for e in entries:
+                        entry_info: dict[str, Any] = {
+                            "requestURL": e.get("requestURL"),
+                            "requestMethod": e.get("requestMethod"),
+                            "responseStatus": e.get("responseStatus"),
+                            "responseStatusText": e.get("responseStatusText"),
+                            "responseType": e.get("responseType"),
+                            "responseHeaders": e.get("responseHeaders", []),
+                        }
+                        if include_response_body and e.get("requestURL"):
+                            try:
+                                resp_res = await self.send(
+                                    "CacheStorage.requestCachedResponse",
+                                    {
+                                        "cacheId": c_id,
+                                        "requestURL": e["requestURL"],
+                                        "requestHeaders": [],
+                                    },
+                                )
+                                b64_body = (
+                                    resp_res.get("response", {}).get("body", "")
+                                )
+                                if b64_body:
+                                    try:
+                                        entry_info["responseBody"] = (
+                                            base64.b64decode(b64_body).decode(
+                                                "utf-8", errors="replace"
+                                            )[:5000]
+                                        )
+                                    except Exception:
+                                        entry_info["responseBodyBase64"] = (
+                                            b64_body[:1000]
+                                        )
+                            except Exception:
+                                pass
+                        formatted_entries.append(entry_info)
+
+                    caches_list.append(
+                        {
+                            "cacheName": c_name,
+                            "cacheId": c_id,
+                            "entries_count": len(formatted_entries),
+                            "entries": formatted_entries,
+                        }
+                    )
+            except Exception as e:
+                logger.warning(f"CDP CacheStorage query failed: {e}")
+
+        # Fallback to JS caches API if CDP was empty or skipped
+        if not caches_list:
+            js_query = f"""(async () => {{
+                if (!window.caches) return [];
+                const names = await caches.keys();
+                const out = [];
+                for (const name of names) {{
+                    if ({json.dumps(cache_name)} && name.toLowerCase() !== {json.dumps(cache_name)}.toLowerCase()) continue;
+                    const c = await caches.open(name);
+                    const reqs = await c.keys();
+                    const entries = [];
+                    for (const r of reqs.slice(0, {limit})) {{
+                        entries.push({{
+                            requestURL: r.url,
+                            requestMethod: r.method,
+                        }});
+                    }}
+                    out.push({{
+                        cacheName: name,
+                        entries_count: entries.length,
+                        entries: entries
+                    }});
+                }}
+                return out;
+            }})()"""
+            try:
+                js_caches = await self.evaluate(js_query)
+                if isinstance(js_caches, list) and js_caches:
+                    caches_list = js_caches
+            except Exception:
+                pass
+
+        return {
+            "origin": origin,
+            "total_caches": len(caches_list),
+            "caches": caches_list,
         }
 

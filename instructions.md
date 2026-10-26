@@ -31,7 +31,7 @@ Each individual MCP action (`navigate`, `wait`, `click`, `fill`) costs 3–5 sec
 }
 ```
 
-*Note: All 75 MCP tools have direct 1:1 action aliases supported in `browser_batch`.*
+*Note: All 81 MCP tools have direct 1:1 action aliases supported in `browser_batch`.*
 
 ---
 
@@ -100,3 +100,43 @@ Fast Browser MCP exposes real-time state via standard MCP Resources:
 *   `browser://network`: In-flight and completed HTTP/WebSocket traffic summary.
 
 Use the built-in MCP Prompts (`web-research`, `form-automation`, `network-debugger`) for guided, resilient execution.
+
+---
+
+## 🔬 9. Web Reverse Engineering & Deep Inspection (REA Superpowers)
+
+Fast Browser MCP incorporates advanced runtime reverse-engineering capabilities inspired by the **REA** (Reverse Engineer Anything) architecture:
+
+*   **Native Event Listeners (`browser_get_event_listeners`):**
+    Before clicking an unresponsive button or submit element, inspect its actual registered listeners via CDP `DOMDebugger`:
+    ```json
+    {"action": "get_event_listeners", "ref": "@1"}
+    ```
+    Returns callback function names, script URLs, line numbers, and registration flags (`passive`, `once`, `useCapture`).
+*   **Standards-Compliant HAR 1.2 Export (`browser_export_traffic`):**
+    Export captured sessions directly as standard HTTP Archive files:
+    ```json
+    {"file_path": "traffic.har", "format": "har", "redact_sensitive_headers": true}
+    ```
+    Open directly in Chrome DevTools (*Network -> Import HAR*), Postman, Fiddler, or REA offline reconstructors.
+*   **Automatic Secrets Redaction:**
+    `Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, passwords, and token query parameters are automatically redacted (`[REDACTED]`) to prevent accidental credential leakage in logs and archives.
+*   **V8 Precise Code Coverage (`browser_observe_coverage`):**
+    Discover exactly which JavaScript functions execute during interaction pipelines (e.g. Turnstile bypasses, client-side encryption, validation logic):
+    ```json
+    {
+      "steps": [
+        {"action": "start_coverage"},
+        {"action": "click", "ref": "@2"},
+        {"action": "stop_coverage"}
+      ]
+    }
+    ```
+*   **Deterministic Screenshot Comparison (`browser_compare_screenshots`):**
+    Verify visual UI reactions without spending thousands of vision LLM inference tokens:
+    ```json
+    {"image1": "before.png", "image2": "after.png", "channel_threshold": 16}
+    ```
+    Returns status (`identical`, `different`), changed pixel percentage, and exact bounding box.
+*   **CacheStorage & Service Worker Inspection (`browser_get_cache_storage`):**
+    Inspect client-side Cache API storage, PWA cached assets, and offline responses. Also accessible via `browser_get_storage(storage_type="cache")`.

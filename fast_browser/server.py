@@ -605,20 +605,42 @@ TOOLS = [
     },
     {
         "name": "browser_get_storage",
-        "description": "Inspect and dump all items from localStorage and sessionStorage for the current origin.",
-        "inputSchema": {"type": "object", "properties": {}, "required": []},
+        "description": "Inspect and dump all items from localStorage, sessionStorage, and optionally CacheStorage for the current origin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "storage_type": {
+                    "type": "string",
+                    "enum": ["all", "local", "session", "cache"],
+                    "default": "all",
+                    "description": "Type of storage to dump: 'all', 'local', 'session', or 'cache'",
+                }
+            },
+            "required": [],
+        },
     },
     {
         "name": "browser_export_traffic",
-        "description": "Export all captured network requests, responses, headers, POST data, and WebSocket frames to a structured JSON file.",
+        "description": "Export all captured network requests, responses, headers, POST data, and WebSocket frames to a structured JSON file or standards-compliant HAR 1.2 file.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": "string",
                     "default": "traffic_dump.json",
-                    "description": "Absolute or relative file path to save traffic dump",
-                }
+                    "description": "Absolute or relative file path to save traffic dump (.json or .har)",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["json", "har"],
+                    "default": "json",
+                    "description": "Export format: 'json' (custom dictionary) or 'har' (standards-compliant HAR 1.2 for DevTools/Fiddler/Postman/REA)",
+                },
+                "redact_sensitive_headers": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Automatically mask Authorization tokens, Cookies, and sensitive credentials",
+                },
             },
             "required": ["file_path"],
         },
@@ -1369,6 +1391,158 @@ TOOLS = [
             "required": ["elements"],
         },
     },
+    {
+        "name": "browser_get_event_listeners",
+        "description": "Inspect native DOM event listeners (click, submit, keydown, change, etc.) attached to an element via CDP DOMDebugger without invoking handlers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of element",
+                },
+                "ref": {
+                    "type": "string",
+                    "description": "Element reference from snapshot (e.g. '@1')",
+                },
+                "depth": {
+                    "type": "integer",
+                    "default": 1,
+                    "description": "Max depth to search for event listeners (1 for target only, -1 for entire ancestor tree)",
+                },
+                "ancestors": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Inspect listeners on window/document",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_compare_screenshots",
+        "description": "Deterministic visual comparison of two screenshots or PNG images. Calculates changed pixel count, changed ratio, and bounding box without Vision LLM overhead.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "image1": {
+                    "type": "string",
+                    "description": "File path, data URL, or base64 of first screenshot",
+                },
+                "image2": {
+                    "type": "string",
+                    "description": "File path, data URL, or base64 of second screenshot",
+                },
+                "channel_threshold": {
+                    "type": "integer",
+                    "default": 16,
+                    "description": "Per-channel RGBA sensitivity delta (0-255)",
+                },
+                "diff_output_path": {
+                    "type": "string",
+                    "description": "Optional file path to save a visual diff highlight PNG",
+                },
+            },
+            "required": ["image1", "image2"],
+        },
+    },
+    {
+        "name": "browser_observe_coverage",
+        "description": "Measure and observe precise V8 JavaScript code coverage during execution to discover which scripts and functions actually ran.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer",
+                    "default": 500,
+                    "description": "Observation window duration in milliseconds",
+                },
+                "detailed": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Collect block-level precise coverage",
+                },
+                "call_count": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Count function executions",
+                },
+                "url_filter": {
+                    "type": "string",
+                    "description": "Optional substring filter for script URLs",
+                },
+                "only_executed": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Only return scripts and functions that were actually executed (call count > 0)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_start_coverage",
+        "description": "Start precise V8 code coverage measurement across subsequent browser interactions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "detailed": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Collect block-level precise coverage",
+                },
+                "call_count": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Count function executions",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_stop_coverage",
+        "description": "Stop active V8 code coverage measurement and return executed scripts and functions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url_filter": {
+                    "type": "string",
+                    "description": "Optional substring filter for script URLs",
+                },
+                "only_executed": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Only return functions with call count > 0",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_get_cache_storage",
+        "description": "Inspect Service Worker and PWA CacheStorage caches, cached endpoints, and responses via CDP.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cache_name": {
+                    "type": "string",
+                    "description": "Optional name of a specific cache to inspect",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 50,
+                    "description": "Maximum number of cached entries to return per cache",
+                },
+                "include_response_body": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to fetch and decode cached response bodies",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -1820,8 +1994,12 @@ async def _handle_console_logs(server: "MCPServer", args: dict[str, Any]) -> str
 async def _handle_export_traffic(server: "MCPServer", args: dict[str, Any]) -> str:
     path = args.get("file_path", "traffic_dump.json")
     safe_path = server.validate_path(path, for_write=True)
-    await server.cdp.network.export_to_file(safe_path)
-    return f"Traffic dump exported successfully to {safe_path}"
+    fmt = args.get("format", "json")
+    redact = args.get("redact_sensitive_headers", True)
+    await server.cdp.network.export_to_file(
+        safe_path, format=fmt, redact_sensitive_headers=redact
+    )
+    return f"Traffic dump exported successfully to {safe_path} (format={fmt}, redact={redact})"
 
 
 @tool("browser_wait_for_network_idle")
@@ -1922,7 +2100,8 @@ async def _handle_clear_storage(server: "MCPServer", args: dict[str, Any]) -> st
 
 @tool("browser_get_storage")
 async def _handle_get_storage(server: "MCPServer", args: dict[str, Any]) -> str:
-    data = await server.cdp.get_storage()
+    storage_type = args.get("storage_type", "all")
+    data = await server.cdp.get_storage(storage_type=storage_type)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
@@ -2169,6 +2348,89 @@ async def _handle_fill_form(server: "MCPServer", args: dict[str, Any]) -> str:
         )
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_get_event_listeners")
+async def _handle_get_event_listeners(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    res = await server.cdp.get_event_listeners(
+        selector=args.get("selector"),
+        ref=args.get("ref"),
+        depth=args.get("depth", 1),
+        ancestors=args.get("ancestors", False),
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_compare_screenshots", requires_connection=False)
+async def _handle_compare_screenshots(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    from .visual_diff import compare_screenshots
+
+    img1 = args.get("image1") or args.get("before") or args.get("screenshot1")
+    img2 = args.get("image2") or args.get("after") or args.get("screenshot2")
+    if not img1 or not img2:
+        raise ValueError("Must provide both 'image1' and 'image2'")
+
+    thresh = args.get("channel_threshold", 16)
+    diff_path = args.get("diff_output_path") or args.get("save_diff_path")
+    if diff_path:
+        diff_path = server.validate_path(diff_path, for_write=True)
+
+    res = compare_screenshots(
+        img1, img2, channel_threshold=thresh, diff_output_path=diff_path
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_observe_coverage")
+async def _handle_observe_coverage(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    res = await server.cdp.observe_coverage(
+        duration_ms=args.get("duration_ms", 500),
+        detailed=args.get("detailed", True),
+        call_count=args.get("call_count", True),
+        url_filter=args.get("url_filter"),
+        only_executed=args.get("only_executed", True),
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_start_coverage")
+async def _handle_start_coverage(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    res = await server.cdp.start_coverage(
+        detailed=args.get("detailed", True),
+        call_count=args.get("call_count", True),
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_stop_coverage")
+async def _handle_stop_coverage(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    res = await server.cdp.stop_coverage(
+        url_filter=args.get("url_filter"),
+        only_executed=args.get("only_executed", True),
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_get_cache_storage")
+async def _handle_get_cache_storage(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    res = await server.cdp.get_cache_storage(
+        cache_name=args.get("cache_name"),
+        limit=args.get("limit", 50),
+        include_response_body=args.get("include_response_body", False),
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
 
 
 # --- MCPServer Core ---

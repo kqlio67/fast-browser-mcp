@@ -44,6 +44,7 @@ VALID_ACTIONS: set[str] = {
     "back",
     "block_resources",
     "block_urls",
+    "cache_storage",
     "cdp_send",
     "cleanup_tabs",
     "clear_cache",
@@ -51,7 +52,9 @@ VALID_ACTIONS: set[str] = {
     "clear_storage",
     "click",
     "clipboard",
+    "compare_screenshots",
     "console_logs",
+    "coverage",
     "cpu_throttling",
     "css_styles",
     "dismiss_banners",
@@ -61,6 +64,7 @@ VALID_ACTIONS: set[str] = {
     "drag_and_drop",
     "emulate_environment",
     "eval",
+    "event_listeners",
     "execute_webmcp_tool",
     "export_session",
     "export_traffic",
@@ -73,8 +77,10 @@ VALID_ACTIONS: set[str] = {
     "find_in_page",
     "forward",
     "geolocation",
+    "get_cache_storage",
     "get_cookies",
     "get_css_styles",
+    "get_event_listeners",
     "get_html",
     "get_indexeddb",
     "get_storage",
@@ -96,6 +102,7 @@ VALID_ACTIONS: set[str] = {
     "network_requests",
     "network_throttling",
     "new_isolated_tab",
+    "observe_coverage",
     "open_system_page",
     "paste",
     "pdf",
@@ -123,8 +130,11 @@ VALID_ACTIONS: set[str] = {
     "set_viewport",
     "snapshot",
     "ssl_ignore",
+    "start_coverage",
     "stealth",
     "stealth_mode",
+    "stop_coverage",
+    "take_coverage",
     "system_info",
     "system_page",
     "theme",
@@ -235,6 +245,15 @@ class BatchRunner:
             step.get("ref") or step.get("selector")
         ):
             return f"Step {idx + 1} ('{act}'): requires 'ref' or 'selector'"
+        if act in ("event_listeners", "get_event_listeners") and not (
+            step.get("ref") or step.get("selector") or step.get("ancestors")
+        ):
+            return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ancestors=True"
+        if act == "compare_screenshots" and not (
+            (step.get("image1") or step.get("before") or step.get("screenshot1"))
+            and (step.get("image2") or step.get("after") or step.get("screenshot2"))
+        ):
+            return f"Step {idx + 1} ('compare_screenshots'): requires 'image1' and 'image2'"
         if act in ("set_download_path", "download_path") and not step.get("path"):
             return f"Step {idx + 1} ('{act}'): missing 'path'"
         if act == "upload_file" and (not step.get("selector") or not step.get("files")):
@@ -853,11 +872,21 @@ class BatchRunner:
                     step_res["storage"] = data
 
                 elif action == "export_traffic":
-                    path = step.get("save_path", "traffic_export.json")
+                    path = step.get("file_path") or step.get(
+                        "save_path", "traffic_export.json"
+                    )
                     safe_path = self.validate_path(path, for_write=True)
-                    await self.cdp.network.export_to_file(safe_path)
+                    fmt = step.get("format", "json")
+                    redact_val = step.get("redact_sensitive_headers", True)
+                    await self.cdp.network.export_to_file(
+                        safe_path,
+                        format=fmt,
+                        redact_sensitive_headers=redact_val,
+                    )
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Traffic exported to {safe_path}"
+                    step_res["detail"] = (
+                        f"Traffic exported to {safe_path} (format={fmt}, redact={redact_val})"
+                    )
 
                 elif action == "console_logs":
                     limit = step.get("limit", 20)
@@ -1212,6 +1241,88 @@ class BatchRunner:
                     res = await self.cdp.get_css_styles(selector=selector, ref=ref)
                     step_res["status"] = "ok"
                     step_res["css_styles"] = res
+
+                elif action in ("event_listeners", "get_event_listeners"):
+                    selector = step.get("selector")
+                    ref = step.get("ref")
+                    depth = step.get("depth", 1)
+                    ancestors = step.get("ancestors", False)
+                    res = await self.cdp.get_event_listeners(
+                        selector=selector, ref=ref, depth=depth, ancestors=ancestors
+                    )
+                    step_res["status"] = "ok"
+                    step_res["event_listeners"] = res
+
+                elif action == "compare_screenshots":
+                    from .visual_diff import compare_screenshots
+
+                    img1 = (
+                        step.get("image1")
+                        or step.get("before")
+                        or step.get("screenshot1")
+                    )
+                    img2 = (
+                        step.get("image2")
+                        or step.get("after")
+                        or step.get("screenshot2")
+                    )
+                    if not img1 or not img2:
+                        raise ValueError(
+                            "compare_screenshots requires 'image1' and 'image2'"
+                        )
+                    thresh = step.get("channel_threshold", 16)
+                    diff_path = step.get("diff_output_path") or step.get(
+                        "save_diff_path"
+                    )
+                    if diff_path:
+                        diff_path = self.validate_path(diff_path, for_write=True)
+                    res = compare_screenshots(
+                        img1,
+                        img2,
+                        channel_threshold=thresh,
+                        diff_output_path=diff_path,
+                    )
+                    step_res["status"] = "ok"
+                    step_res["comparison"] = res
+
+                elif action == "start_coverage":
+                    res = await self.cdp.start_coverage(
+                        detailed=step.get("detailed", True),
+                        call_count=step.get("call_count", True),
+                    )
+                    step_res["status"] = "ok"
+                    step_res["coverage"] = res
+
+                elif action in ("stop_coverage", "take_coverage"):
+                    res = await self.cdp.stop_coverage(
+                        url_filter=step.get("url_filter"),
+                        only_executed=step.get("only_executed", True),
+                    )
+                    step_res["status"] = "ok"
+                    step_res["coverage"] = res
+
+                elif action in ("observe_coverage", "coverage"):
+                    res = await self.cdp.observe_coverage(
+                        duration_ms=step.get("duration_ms", 500),
+                        detailed=step.get("detailed", True),
+                        call_count=step.get("call_count", True),
+                        url_filter=step.get("url_filter"),
+                        only_executed=step.get("only_executed", True),
+                    )
+                    step_res["status"] = "ok"
+                    step_res["coverage"] = res
+
+                elif action in ("cache_storage", "get_cache_storage"):
+                    c_name = step.get("cache_name")
+                    limit = step.get("limit", 50)
+                    include_body = step.get("include_response_body", False)
+                    res = await self.cdp.get_cache_storage(
+                        cache_name=c_name,
+                        limit=limit,
+                        include_response_body=include_body,
+                    )
+                    step_res["status"] = "ok"
+                    step_res["cache_storage"] = res
 
                 elif action in ("isolated_tab", "new_isolated_tab"):
                     url = step.get("url", "about:blank")
