@@ -76,7 +76,12 @@ Web applications load data asynchronously via Fetch/XHR.
 | Save / Restore session | `browser_export_session()`, `browser_import_session()` | `{"action": "export_session"}` |
 | Wait for downloaded file | `browser_wait_for_download(directory=...)` | `{"action": "wait_download"}` |
 | API / Traffic analysis | `browser_network_requests()`, `browser_websocket_messages()` | `{"action": "network_requests"}` |
-| Inspect CSS / Events | `browser_get_css_styles(ref="@1")` | `{"action": "css_styles"}` |
+| Inspect CSS / Styles | `browser_get_css_styles(ref="@1")` | `{"action": "css_styles"}` |
+| Inspect Event Listeners | `browser_get_event_listeners(ref="@1")` | `{"action": "get_event_listeners", "ref": "@1"}` |
+| Export Traffic (HAR/JSON) | `browser_export_traffic(file_path="...", format="har")` | `{"action": "export_traffic", "format": "har"}` |
+| Visual Screenshot Diff | `browser_compare_screenshots(before_path="...", after_path="...")` | `{"action": "compare_screenshots"}` |
+| JS Code Coverage | `browser_observe_coverage(duration_ms=...)` | `{"action": "start_coverage"}` / `{"action": "stop_coverage"}` |
+| Inspect CacheStorage | `browser_get_cache_storage()` | `{"action": "get_cache_storage"}` |
 | Reconnect to port | `browser_connect(port=...)` | — |
 | Launch standalone Chrome | `browser_launch(headless=True, profile_name=...)` | — |
 | Close browser process | `browser_close_browser()` | — |
