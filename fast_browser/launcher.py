@@ -374,3 +374,22 @@ def launch_browser(
 
     _active_browsers.append(bp)
     return bp
+
+
+def detect_backend(
+    host: str = "127.0.0.1", port: int = 9222, timeout: float = 1.0
+) -> str:
+    """Detect whether connected CDP server is Chromium, Kitesurf, or another backend."""
+    try:
+        resp = requests.get(f"http://{host}:{port}/json/version", timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            browser_str = str(data.get("Browser", "")).lower()
+            if "kitesurf" in browser_str:
+                return "kitesurf"
+            elif "chrome" in browser_str or "chromium" in browser_str:
+                return "chrome"
+            return "cdp_compatible"
+    except Exception:
+        pass
+    return "unknown"

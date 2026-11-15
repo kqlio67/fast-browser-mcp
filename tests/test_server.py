@@ -14,12 +14,12 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
 
     def test_tool_count_and_exact_match(self):
         self.assertEqual(
-            len(TOOLS), 81, "Expected exactly 81 registered tools in TOOLS"
+            len(TOOLS), 90, "Expected exactly 90 registered tools in TOOLS"
         )
         self.assertEqual(
             len(TOOL_REGISTRY),
-            81,
-            "Expected exactly 81 registered handlers in TOOL_REGISTRY",
+            90,
+            "Expected exactly 90 registered handlers in TOOL_REGISTRY",
         )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())
@@ -279,6 +279,38 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         res = json.loads(res_str)
         self.assertEqual(res["result"], "ok")
 
+    async def test_handle_call_route_intercept(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"success": True, "results": [{"status": "ok"}]}
+        )
+        res_str = await self.server.handle_call(
+            "browser_route_intercept",
+            {"action": "mock", "url_pattern": "*api/test*", "status_code": 200, "body": '{"ok": true}'},
+        )
+        res = json.loads(res_str)
+        self.assertTrue(res["success"])
+        self.server.batch.execute.assert_awaited_once()
+
+    async def test_handle_call_discover_endpoints(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"success": True, "results": [{"status": "ok", "endpoints": {"endpoints": []}}]}
+        )
+        res_str = await self.server.handle_call("browser_discover_endpoints", {})
+        res = json.loads(res_str)
+        self.assertTrue(res["success"])
+        self.server.batch.execute.assert_awaited_once()
+
+    async def test_handle_call_diff_snapshot(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"success": True, "results": [{"status": "ok", "diff": {"added_count": 1}}]}
+        )
+        res_str = await self.server.handle_call(
+            "browser_diff_snapshot", {"previous_snapshot": "=== Page ===\nURL: http://a\n@ref:e1 button 'OK'"}
+        )
+        res = json.loads(res_str)
+        self.assertTrue(res["success"])
+        self.server.batch.execute.assert_awaited_once()
+
     async def test_handle_call_batch(self):
         self.server.batch.execute = AsyncMock(
             return_value={"success": True, "steps_executed": 1, "results": []}
@@ -402,6 +434,67 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         # Test unknown prompt raises ValueError
         with self.assertRaises(ValueError):
             self.server.handle_prompt_get("unknown_prompt_xyz", {})
+
+    def test_diff_snapshots(self):
+        from fast_browser.snapshot import diff_snapshots
+
+        prev = "=== Page: Old ===\nURL: https://example.com/step1\n@ref:e1 button 'Next'\n@ref:e2 button 'Cancel'"
+        curr = "=== Page: New ===\nURL: https://example.com/step2\n@ref:e1 button 'Cancel'\n@ref:e3 button 'Finish'"
+        d = diff_snapshots(prev, curr)
+        self.assertTrue(d["url_changed"])
+        self.assertEqual(d["added_count"], 1)
+        self.assertEqual(d["removed_count"], 1)
+        self.assertIn("@ref:e3 button 'Finish'", d["added_elements"])
+        self.assertIn("@ref:e1 button 'Next'", d["removed_elements"])
+
+    async def test_handle_call_human_mouse(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "detail": "Human clicked at (100.0, 200.0)"}]}
+        )
+        res_str = await self.server.handle_call("browser_human_mouse", {"x": 100, "y": 200, "action": "click"})
+        res = json.loads(res_str)
+        self.assertEqual(res["executed"], 1)
+        self.assertEqual(res["results"][0]["status"], "ok")
+
+    async def test_handle_call_set_adblock(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "adblock": {"enabled": True, "rules_count": 85}}]}
+        )
+        res_str = await self.server.handle_call("browser_set_adblock", {"enabled": True, "block_trackers": True})
+        res = json.loads(res_str)
+        self.assertEqual(res["executed"], 1)
+        self.assertTrue(res["results"][0]["adblock"]["enabled"])
+
+    async def test_handle_call_smart_find(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "matches": [{"ref": "@e1", "score": 95}]}]}
+        )
+        res_str = await self.server.handle_call("browser_smart_find", {"intent": "submit button"})
+        res = json.loads(res_str)
+        self.assertEqual(res["executed"], 1)
+        self.assertEqual(len(res["results"][0]["matches"]), 1)
+
+    async def test_handle_call_context_pool(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "browser_context_id": "ctx-123"}]}
+        )
+        res_str = await self.server.handle_call("browser_create_context", {})
+        res = json.loads(res_str)
+        self.assertEqual(res["results"][0]["browser_context_id"], "ctx-123")
+
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "browser_contexts": ["ctx-123"]}]}
+        )
+        res_str2 = await self.server.handle_call("browser_list_contexts", {})
+        res2 = json.loads(res_str2)
+        self.assertIn("ctx-123", res2["results"][0]["browser_contexts"])
+
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "detail": "Disposed browser context ctx-123"}]}
+        )
+        res_str3 = await self.server.handle_call("browser_dispose_context", {"browser_context_id": "ctx-123"})
+        res3 = json.loads(res_str3)
+        self.assertEqual(res3["results"][0]["status"], "ok")
 
 
 if __name__ == "__main__":

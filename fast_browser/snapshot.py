@@ -251,6 +251,7 @@ SNAPSHOT_JS = r"""(() => {
 class PageSnapshot:
     def __init__(self, cdp: CDPClient):
         self.cdp = cdp
+        self.last_snapshot_text: str | None = None
 
     def build_snapshot_js(
         self,
@@ -270,12 +271,116 @@ class PageSnapshot:
         js = js.replace("%DEFAULT_FRAME_PREFIX%", json.dumps(default_frame_prefix))
         return js
 
+    async def capture_passive(self) -> dict[str, Any]:
+        """Capture accessibility tree using native CDP Accessibility domain without executing JavaScript in the page."""
+        try:
+            await self.cdp.send("Accessibility.enable")
+            ax_resp = await self.cdp.send("Accessibility.getFullAXTree")
+            nodes = ax_resp.get("nodes", [])
+        except Exception as e:
+            logger.debug("Accessibility.getFullAXTree failed: %s", e)
+            nodes = []
+
+        interactive_roles = {
+            "button",
+            "link",
+            "textbox",
+            "checkbox",
+            "radio",
+            "combobox",
+            "searchbox",
+            "menuitem",
+            "tab",
+            "switch",
+            "slider",
+            "spinbutton",
+        }
+
+        interactive: list[str] = []
+        headings: list[str] = []
+        ref_ids: list[int] = []
+        next_id = 1
+
+        self.cdp.ref_session_map.clear()
+
+        for node in nodes:
+            if node.get("ignored", False):
+                continue
+            role_obj = node.get("role", {})
+            role = (
+                role_obj.get("value", "")
+                if isinstance(role_obj, dict)
+                else str(role_obj)
+            )
+            name_obj = node.get("name", {})
+            name = (
+                name_obj.get("value", "")
+                if isinstance(name_obj, dict)
+                else str(name_obj)
+            )
+            name = (name or "").strip()
+
+            if role == "heading" or "heading" in role:
+                level = 1
+                for prop in node.get("properties", []):
+                    if prop.get("name") == "level":
+                        level = prop.get("value", {}).get("value", 1)
+                headings.append(f"H{level}: {name}" if name else f"H{level}")
+
+            if role in interactive_roles or node.get("backendDOMNodeId"):
+                if not name and role not in (
+                    "button",
+                    "textbox",
+                    "searchbox",
+                    "link",
+                ):
+                    continue
+                node_id = next_id
+                next_id += 1
+                ref_ids.append(node_id)
+                self.cdp.ref_session_map[node_id] = None
+
+                val_obj = node.get("value", {})
+                val = val_obj.get("value", "") if isinstance(val_obj, dict) else ""
+                val_str = f' value="{val}"' if val else ""
+                line = f"@ref:e{node_id} {role} '{name}'{val_str}"
+                interactive.append(line)
+
+        title = ""
+        url = ""
+        try:
+            target = await self.cdp.get_target_by_id_async(
+                self.cdp.target_id or ""
+            )
+            if target:
+                title = target.get("title", "")
+                url = target.get("url", "")
+        except Exception:
+            pass
+
+        return {
+            "title": title or "Page",
+            "url": url or "",
+            "root": "document (passive)",
+            "in_viewport": False,
+            "headings": headings[:15],
+            "interactive": interactive,
+            "ref_ids": ref_ids,
+            "total_count": len(interactive),
+            "count": len(interactive),
+            "truncated": False,
+            "passive": True,
+        }
+
     async def capture(
         self,
         selector: str | None = None,
         in_viewport: bool = False,
         max_elements: int | None = None,
+        passive: bool = False,
     ) -> dict[str, Any]:
+        if passive:
+            return await self.capture_passive()
         url = await self.cdp.evaluate("window.location.href")
         if url and ("chrome://settings" in url or "chrome://extensions" in url):
             ready_js = """(async () => {
@@ -401,9 +506,13 @@ class PageSnapshot:
         selector: str | None = None,
         in_viewport: bool = False,
         max_elements: int | None = None,
+        passive: bool = False,
     ) -> str:
         data = await self.capture(
-            selector=selector, in_viewport=in_viewport, max_elements=max_elements
+            selector=selector,
+            in_viewport=in_viewport,
+            max_elements=max_elements,
+            passive=passive,
         )
         scope_info = (
             f" [Scope: {data.get('root')}]" if data.get("root") != "document" else ""
@@ -436,4 +545,73 @@ class PageSnapshot:
                     f"... ({total_count - len(interactive)} more elements omitted; use selector to focus)"
                 )
 
-        return "\n".join(lines)
+        res_str = "\n".join(lines)
+        self.last_snapshot_text = res_str
+        return res_str
+
+    async def diff(
+        self, previous_snapshot: str | None = None, passive: bool = False
+    ) -> dict[str, Any]:
+        """Compare current snapshot against previous snapshot."""
+        prev = previous_snapshot or self.last_snapshot_text or ""
+        curr = await self.capture_formatted(passive=passive)
+        return diff_snapshots(prev, curr)
+
+
+def diff_snapshots(prev_text: str, curr_text: str) -> dict[str, Any]:
+    """Calculate structural delta between two formatted snapshot outputs."""
+    prev_lines = [
+        line.strip()
+        for line in prev_text.splitlines()
+        if line.strip().startswith("@ref:")
+    ]
+    curr_lines = [
+        line.strip()
+        for line in curr_text.splitlines()
+        if line.strip().startswith("@ref:")
+    ]
+
+    def normalize_ref(line: str) -> str:
+        parts = line.split(" ", 1)
+        return parts[1] if len(parts) > 1 else line
+
+    prev_items = {normalize_ref(item): item for item in prev_lines}
+    curr_items = {normalize_ref(item): item for item in curr_lines}
+
+    added = [curr_items[k] for k in curr_items if k not in prev_items]
+    removed = [prev_items[k] for k in prev_items if k not in curr_items]
+
+    prev_url = ""
+    curr_url = ""
+    for text_line in prev_text.splitlines():
+        if text_line.startswith("URL:"):
+            prev_url = text_line.replace("URL:", "").strip()
+            break
+    for text_line in curr_text.splitlines():
+        if text_line.startswith("URL:"):
+            curr_url = text_line.replace("URL:", "").strip()
+            break
+
+    url_changed = bool(prev_url and curr_url and prev_url != curr_url)
+
+    summary_parts = []
+    if url_changed:
+        summary_parts.append(f"URL changed to {curr_url}")
+    if added:
+        summary_parts.append(f"{len(added)} element(s) added")
+    if removed:
+        summary_parts.append(f"{len(removed)} element(s) removed")
+    if not summary_parts:
+        summary_parts.append("No structural changes detected")
+
+    return {
+        "status": "success",
+        "url_changed": url_changed,
+        "previous_url": prev_url,
+        "current_url": curr_url,
+        "added_count": len(added),
+        "removed_count": len(removed),
+        "added_elements": added,
+        "removed_elements": removed,
+        "summary": ", ".join(summary_parts),
+    }

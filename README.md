@@ -242,6 +242,15 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_start_coverage` | Start precise V8 JavaScript code coverage collection across subsequent browser actions |
 | `browser_stop_coverage` | Stop V8 coverage collection and return filtered executed functions and call counts |
 | `browser_compare_screenshots` | **Deterministic Visual Diffing**: Compare two screenshots/PNGs with RGBA pixel delta, changed ratio, and bounding box without Vision LLM cost |
+| `browser_diff_snapshot` | **Semantic Snapshot Diffing**: Compute added/removed elements, text changes, and URL deltas between page states |
+| `browser_route_intercept` | **CDP Fetch Interception**: Mock responses, redirect URLs, modify headers, or fail network requests |
+| `browser_discover_endpoints` | **Static API Discovery**: Extract API endpoints and fetch/XHR URLs from scripts and DOM elements |
+| `browser_human_mouse` | **Natural Mouse Modeling**: Humanized Bezier curves with micro-jitter and Fitts's law easing (bypasses behavioral anti-bot heuristics) |
+| `browser_set_adblock` | **Built-in Content Filter**: Curated ad, tracker, and telemetry blocker via `Network.setBlockedURLs` |
+| `browser_smart_find` | **Semantic Element Finder**: Find interactive elements by natural language intent with relevance scoring and `@ref` targets |
+| `browser_create_context` | Create an isolated incognito BrowserContext with clean session, storage, and cookies |
+| `browser_dispose_context` | Close and clean up an isolated BrowserContext and all associated tabs |
+| `browser_list_contexts` | List all active isolated BrowserContext IDs |
 | `browser_list_webmcp_tools` | List WebMCP tools exposed by the web page |
 | `browser_execute_webmcp_tool` | Execute a WebMCP tool exposed by the web page |
 | `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, bounding rect, and attached event listeners for any element by `@ref` or CSS selector |

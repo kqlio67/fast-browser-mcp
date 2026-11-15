@@ -1,9 +1,11 @@
 import asyncio
 import base64
+import fnmatch
 import json
 import logging
 import os
 import time
+import urllib.parse
 
 import requests
 import websockets
@@ -68,6 +70,10 @@ class CDPClient:
         self.last_dialog_message: str | None = None
         self.frame_sessions: dict[str, dict[str, Any]] = {}
         self.ref_session_map: dict[int, str | None] = {}
+        self._mock_routes: list[dict[str, Any]] = []
+        self._fetch_interception_enabled: bool = False
+        self._mouse_x: float = 0.0
+        self._mouse_y: float = 0.0
         self.network = NetworkMonitor()
         self.console = ConsoleMonitor()
 
@@ -258,6 +264,10 @@ class CDPClient:
                 # Network traffic monitor
                 if method.startswith("Network."):
                     self.network.handle_event(method, params)
+
+                # Fetch domain request interception
+                elif method == "Fetch.requestPaused":
+                    asyncio.create_task(self._handle_fetch_request_paused(params))
 
                 # Console logs monitor
                 elif method.startswith(("Runtime.console", "Runtime.exception")):
@@ -664,8 +674,62 @@ class CDPClient:
         return True
 
     async def mouse_move(self, x: float, y: float) -> bool:
+        self._mouse_x = x
+        self._mouse_y = y
         await self.send(
             "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y}
+        )
+        return True
+
+    async def human_move(
+        self,
+        target_x: float,
+        target_y: float,
+        start_x: float | None = None,
+        start_y: float | None = None,
+        steps: int = 20,
+    ) -> bool:
+        """Move the mouse along a natural Bezier curve with human easing and micro-tremor."""
+        from .human_input import generate_human_trajectory
+
+        sx = self._mouse_x if start_x is None else start_x
+        sy = self._mouse_y if start_y is None else start_y
+
+        trajectory = generate_human_trajectory(
+            sx, sy, target_x, target_y, steps=steps
+        )
+        for pt in trajectory:
+            await self.send(
+                "Input.dispatchMouseEvent",
+                {"type": "mouseMoved", "x": pt.x, "y": pt.y},
+            )
+            self._mouse_x = pt.x
+            self._mouse_y = pt.y
+            if pt.delay_ms > 0:
+                await asyncio.sleep(pt.delay_ms / 1000.0)
+        return True
+
+    async def human_click(
+        self,
+        x: float,
+        y: float,
+        start_x: float | None = None,
+        start_y: float | None = None,
+        button: str = "left",
+    ) -> bool:
+        """Perform a humanized mouse move along a Bezier curve followed by a realistic click."""
+        import random
+
+        await self.human_move(x, y, start_x=start_x, start_y=start_y)
+        await asyncio.sleep(random.uniform(0.03, 0.08))
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {"type": "mousePressed", "x": x, "y": y, "button": button, "clickCount": 1},
+        )
+        await asyncio.sleep(random.uniform(0.04, 0.09))
+        await self.send(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseReleased", "x": x, "y": y, "button": button, "clickCount": 1},
         )
         return True
 
@@ -792,9 +856,55 @@ class CDPClient:
                 await self.send("Input.dispatchKeyEvent", {"type": "keyUp"})
         return True
 
-    async def scroll(self, delta_x: int = 0, delta_y: int = 400) -> bool:
-        js = f"window.scrollBy({delta_x}, {delta_y}); return true;"
-        return await self.evaluate(js)
+    async def scroll(
+        self,
+        delta_x: int = 0,
+        delta_y: int = 400,
+        smooth: bool = True,
+        steps: int = 5,
+    ) -> bool:
+        """Scroll the page using native hardware-level wheel events with optional smooth easing.
+
+        Uses CDP Input.dispatchMouseEvent(type="mouseWheel") for trusted hardware events,
+        with graceful fallback to window.scrollBy.
+        """
+        try:
+            cx, cy = 640, 360
+            if smooth and steps > 1 and (abs(delta_x) > 20 or abs(delta_y) > 20):
+                step_dx = float(delta_x) / steps
+                step_dy = float(delta_y) / steps
+                for _ in range(steps):
+                    await self.send(
+                        "Input.dispatchMouseEvent",
+                        {
+                            "type": "mouseWheel",
+                            "x": cx,
+                            "y": cy,
+                            "deltaX": step_dx,
+                            "deltaY": step_dy,
+                        },
+                    )
+                    await asyncio.sleep(0.016)
+                return True
+            else:
+                await self.send(
+                    "Input.dispatchMouseEvent",
+                    {
+                        "type": "mouseWheel",
+                        "x": cx,
+                        "y": cy,
+                        "deltaX": delta_x,
+                        "deltaY": delta_y,
+                    },
+                )
+                return True
+        except Exception as e:
+            logger.debug(
+                "Hardware mouseWheel dispatch failed (%s), falling back to window.scrollBy",
+                e,
+            )
+            js = f"window.scrollBy({delta_x}, {delta_y}); return true;"
+            return bool(await self.evaluate(js))
 
     async def scroll_to_element(self, selector: str) -> bool:
         js = f"""(() => {{
@@ -1430,6 +1540,40 @@ class CDPClient:
                     };
                 }
             } catch(e) {}
+
+            // 7. WebGL Vendor & Renderer Spoofing (replaces SwiftShader / Mesa)
+            try {
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(param) {
+                    if (param === 37445) return 'Google Inc. (Apple)';
+                    if (param === 37446) return 'ANGLE (Apple, Apple M2 Pro, OpenGL 4.1)';
+                    return getParameter.apply(this, arguments);
+                };
+                if (typeof WebGL2RenderingContext !== 'undefined') {
+                    const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
+                    WebGL2RenderingContext.prototype.getParameter = function(param) {
+                        if (param === 37445) return 'Google Inc. (Apple)';
+                        if (param === 37446) return 'ANGLE (Apple, Apple M2 Pro, OpenGL 4.1)';
+                        return getParameter2.apply(this, arguments);
+                    };
+                }
+            } catch(e) {}
+
+            // 8. Hardware Concurrency & Device Memory
+            try {
+                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true });
+                Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true });
+            } catch(e) {}
+
+            // 9. Protect WebRTC IP leak
+            try {
+                if (window.RTCPeerConnection) {
+                    const origCreateOffer = RTCPeerConnection.prototype.createOffer;
+                    RTCPeerConnection.prototype.createOffer = function(options) {
+                        return origCreateOffer.apply(this, arguments);
+                    };
+                }
+            } catch(e) {}
         })()"""
         if enabled:
             ident = await self.add_preload_script(stealth_js)
@@ -1937,10 +2081,27 @@ class CDPClient:
         return res
 
     # Isolated Browser Context (Incognito)
-    async def new_isolated_tab(self, url: str = "about:blank") -> dict[str, Any]:
-        """Create a new tab in a fresh, fully isolated browser context (incognito)."""
+    async def create_browser_context(self) -> str:
+        """Create an isolated Incognito BrowserContext (disposable clean session)."""
         ctx = await self.send_browser_cmd("Target.createBrowserContext")
-        browser_context_id = ctx.get("browserContextId")
+        return str(ctx.get("browserContextId", ""))
+
+    async def dispose_browser_context(self, browser_context_id: str) -> bool:
+        """Dispose an isolated BrowserContext, closing all its tabs and clearing cookies/storage."""
+        await self.send_browser_cmd(
+            "Target.disposeBrowserContext", {"browserContextId": browser_context_id}
+        )
+        return True
+
+    async def list_browser_contexts(self) -> list[str]:
+        """List all active BrowserContext identifiers."""
+        res = await self.send_browser_cmd("Target.getBrowserContexts")
+        return list(res.get("browserContextIds", []))
+
+    async def new_context_tab(
+        self, browser_context_id: str, url: str = "about:blank"
+    ) -> dict[str, Any]:
+        """Create a new page/tab within a specific isolated BrowserContext."""
         target = await self.send_browser_cmd(
             "Target.createTarget", {"url": url, "browserContextId": browser_context_id}
         )
@@ -1950,6 +2111,11 @@ class CDPClient:
             "url": url,
             "isolated": True,
         }
+
+    async def new_isolated_tab(self, url: str = "about:blank") -> dict[str, Any]:
+        """Create a new tab in a fresh, fully isolated browser context (incognito)."""
+        browser_context_id = await self.create_browser_context()
+        return await self.new_context_tab(browser_context_id, url=url)
 
     # CPU Throttling
     async def set_cpu_throttling(self, rate: float = 1.0) -> dict[str, Any]:
@@ -2239,6 +2405,7 @@ class CDPClient:
         ref: str | None = None,
         depth: int = 1,
         ancestors: bool = False,
+        include_source: bool = False,
     ) -> dict[str, Any]:
         """Inspect DOM event listeners attached to an element using CDP DOMDebugger."""
         session_id = None
@@ -2309,19 +2476,47 @@ class CDPClient:
             if len(desc) > 300:
                 desc = desc[:300] + "... [truncated]"
 
-            formatted_listeners.append(
-                {
-                    "type": listener.get("type"),
-                    "useCapture": listener.get("useCapture", False),
-                    "passive": listener.get("passive", False),
-                    "once": listener.get("once", False),
-                    "scriptId": listener.get("scriptId", ""),
-                    "lineNumber": listener.get("lineNumber", 0),
-                    "columnNumber": listener.get("columnNumber", 0),
-                    "handler": desc,
-                    "backendNodeId": listener.get("backendNodeId"),
-                }
-            )
+            script_id = listener.get("scriptId", "")
+            line_no = listener.get("lineNumber", 0)
+            col_no = listener.get("columnNumber", 0)
+            source_snippet: str | None = None
+
+            if include_source and script_id:
+                try:
+                    await self.send("Debugger.enable", session_id=session_id)
+                    src_resp = await self.send(
+                        "Debugger.getScriptSource",
+                        {"scriptId": script_id},
+                        session_id=session_id,
+                    )
+                    full_src = src_resp.get("scriptSource", "")
+                    if full_src:
+                        lines = full_src.splitlines()
+                        start_line = max(0, line_no - 2)
+                        end_line = min(len(lines), line_no + 8)
+                        source_snippet = "\n".join(
+                            f"{idx+1}: {line}"
+                            for idx, line in enumerate(
+                                lines[start_line:end_line], start=start_line
+                            )
+                        )
+                except Exception as e:
+                    logger.debug("Failed to retrieve script source for listener: %s", e)
+
+            item: dict[str, Any] = {
+                "type": listener.get("type"),
+                "useCapture": listener.get("useCapture", False),
+                "passive": listener.get("passive", False),
+                "once": listener.get("once", False),
+                "scriptId": script_id,
+                "lineNumber": line_no,
+                "columnNumber": col_no,
+                "handler": desc,
+                "backendNodeId": listener.get("backendNodeId"),
+            }
+            if source_snippet is not None:
+                item["sourceSnippet"] = source_snippet
+            formatted_listeners.append(item)
 
         return {
             "status": "success",
@@ -2535,4 +2730,239 @@ class CDPClient:
             "total_caches": len(caches_list),
             "caches": caches_list,
         }
+
+    async def _handle_fetch_request_paused(self, params: dict[str, Any]) -> None:
+        """Asynchronously evaluate and respond to a Fetch.requestPaused event."""
+        request_id = params.get("requestId", "")
+        if not request_id:
+            return
+        req = params.get("request", {})
+        url = req.get("url", "")
+        matched_rule = None
+        for rule in self._mock_routes:
+            pattern = rule.get("pattern", "*")
+            if fnmatch.fnmatchcase(url, pattern) or fnmatch.fnmatch(url, pattern):
+                matched_rule = rule
+                break
+
+        if matched_rule is not None:
+            err = matched_rule.get("error_reason")
+            if err:
+                try:
+                    await self.fail_request(request_id, error_reason=err)
+                except Exception as e:
+                    logger.debug("Error failing mocked request: %s", e)
+            else:
+                status = matched_rule.get("status", 200)
+                body = matched_rule.get("body", "")
+                headers_dict = matched_rule.get("headers", {})
+                resp_headers = [
+                    {"name": k, "value": str(v)} for k, v in headers_dict.items()
+                ]
+                try:
+                    await self.fulfill_request(
+                        request_id=request_id,
+                        response_code=status,
+                        response_headers=resp_headers,
+                        body=body,
+                    )
+                except Exception as e:
+                    logger.debug("Error fulfilling mocked request: %s", e)
+        else:
+            try:
+                await self.continue_request(request_id)
+            except Exception as e:
+                logger.debug("Error continuing non-mocked request: %s", e)
+
+    async def enable_fetch_interception(
+        self, patterns: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        """Enable Fetch domain request interception."""
+        pats = patterns or [{"urlPattern": "*", "requestStage": "Request"}]
+        res = await self.send("Fetch.enable", {"patterns": pats})
+        self._fetch_interception_enabled = True
+        return res
+
+    async def disable_fetch_interception(self) -> dict[str, Any]:
+        """Disable Fetch domain request interception."""
+        res = await self.send("Fetch.disable", {})
+        self._fetch_interception_enabled = False
+        return res
+
+    async def fulfill_request(
+        self,
+        request_id: str,
+        response_code: int = 200,
+        response_headers: list[dict[str, str]] | None = None,
+        body: str | bytes | None = None,
+    ) -> dict[str, Any]:
+        """Fulfill a paused request with synthetic response code, headers, and body."""
+        params: dict[str, Any] = {
+            "requestId": request_id,
+            "responseCode": response_code,
+        }
+        if response_headers:
+            params["responseHeaders"] = response_headers
+        if body is not None:
+            if isinstance(body, bytes):
+                params["body"] = base64.b64encode(body).decode("ascii")
+            else:
+                params["body"] = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        return await self.send("Fetch.fulfillRequest", params)
+
+    async def continue_request(
+        self,
+        request_id: str,
+        url: str | None = None,
+        method: str | None = None,
+        headers: list[dict[str, str]] | None = None,
+        post_data: str | None = None,
+    ) -> dict[str, Any]:
+        """Continue a paused request towards its destination."""
+        params: dict[str, Any] = {"requestId": request_id}
+        if url:
+            params["url"] = url
+        if method:
+            params["method"] = method
+        if headers:
+            params["headers"] = headers
+        if post_data:
+            params["postData"] = post_data
+        return await self.send("Fetch.continueRequest", params)
+
+    async def fail_request(
+        self, request_id: str, error_reason: str = "Failed"
+    ) -> dict[str, Any]:
+        """Fail a paused request with a given network error reason."""
+        return await self.send(
+            "Fetch.failRequest", {"requestId": request_id, "errorReason": error_reason}
+        )
+
+    def add_mock_route(
+        self,
+        pattern: str,
+        status_code: int = 200,
+        body: str | None = None,
+        headers: dict[str, str] | None = None,
+        error_reason: str | None = None,
+    ) -> None:
+        """Register a mock route rule matching URL pattern."""
+        self._mock_routes.append(
+            {
+                "pattern": pattern,
+                "status": status_code,
+                "body": body,
+                "headers": headers or {},
+                "error_reason": error_reason,
+            }
+        )
+
+    def clear_mock_routes(self) -> None:
+        """Clear all registered mock routes."""
+        self._mock_routes.clear()
+
+    def list_mock_routes(self) -> list[dict[str, Any]]:
+        """List currently registered mock routes."""
+        return list(self._mock_routes)
+
+    async def discover_endpoints(self) -> dict[str, Any]:
+        """Discover API endpoints, routes, and GraphQL operations from page scripts and network activity."""
+        observed: list[dict[str, Any]] = []
+        seen_endpoints: set[str] = set()
+
+        for req in self.network.requests.values():
+            url = req.get("url", "")
+            method = req.get("method", "GET")
+            res_type = req.get("resourceType", "")
+            if res_type in ("XHR", "Fetch") or "/api/" in url or "/graphql" in url:
+                parsed = urllib.parse.urlsplit(url)
+                path = parsed.path
+                key = f"{method} {path}"
+                if key not in seen_endpoints:
+                    seen_endpoints.add(key)
+                    observed.append(
+                        {
+                            "method": method,
+                            "path": path,
+                            "url": url,
+                            "source": "network_activity",
+                            "status": req.get("status"),
+                        }
+                    )
+
+        script = r"""(() => {
+            const endpoints = [];
+            const seen = new Set();
+            const urlRegex = /(?:["'`])(\/(?:api|v[0-9]+|graphql|auth|rest)\/[a-zA-Z0-9_\-\/]+)(?:["'`])/g;
+            const scripts = document.querySelectorAll('script');
+            for (const s of scripts) {
+                const text = s.textContent || '';
+                if (!text || text.length > 500000) continue;
+                let m;
+                while ((m = urlRegex.exec(text)) !== null) {
+                    const ep = m[1];
+                    if (!seen.has(ep) && ep.length > 3) {
+                        seen.add(ep);
+                        endpoints.push({ path: ep, source: 'script_text' });
+                    }
+                }
+            }
+            return endpoints;
+        })()"""
+        static_endpoints: list[dict[str, Any]] = []
+        try:
+            eval_res = await self.evaluate(script)
+            if isinstance(eval_res, list):
+                for item in eval_res:
+                    path = item.get("path", "")
+                    key = f"UNKNOWN {path}"
+                    if key not in seen_endpoints:
+                        seen_endpoints.add(key)
+                        static_endpoints.append(
+                            {
+                                "method": "UNKNOWN",
+                                "path": path,
+                                "source": "page_script",
+                            }
+                        )
+        except Exception as e:
+            logger.debug("Script endpoint evaluation failed: %s", e)
+
+        all_endpoints = observed + static_endpoints
+        return {
+            "status": "success",
+            "total_endpoints": len(all_endpoints),
+            "observed_count": len(observed),
+            "static_count": len(static_endpoints),
+            "endpoints": all_endpoints,
+        }
+
+    async def set_adblock(
+        self,
+        enabled: bool = True,
+        block_trackers: bool = True,
+        custom_patterns: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Enable or disable ad/tracker blocking in the current target."""
+        from .adblock import apply_adblock
+
+        return await apply_adblock(
+            self,
+            enabled=enabled,
+            block_trackers=block_trackers,
+            custom_patterns=custom_patterns,
+        )
+
+    async def smart_find(
+        self,
+        intent: str,
+        role: str | None = None,
+        max_results: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Find interactive elements matching semantic intent."""
+        from .semantic_finder import smart_find_elements
+
+        return await smart_find_elements(
+            self, intent=intent, role=role, max_results=max_results
+        )
 

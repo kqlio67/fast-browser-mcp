@@ -12,7 +12,7 @@ import aiofiles
 
 from .batch import BatchRunner
 from .cdp import CDPClient
-from .launcher import validate_environment
+from .launcher import detect_backend, validate_environment
 from .snapshot import PageSnapshot
 
 logging.basicConfig(
@@ -284,6 +284,11 @@ TOOLS = [
                     "type": "integer",
                     "description": "Maximum interactive elements to include (truncates remainder to save tokens)",
                 },
+                "passive": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, captures snapshot purely via native CDP Accessibility domain without executing any JavaScript in the page.",
+                },
             },
             "required": [],
         },
@@ -438,6 +443,11 @@ TOOLS = [
                 "selector": {
                     "type": "string",
                     "description": "CSS selector to scroll into view",
+                },
+                "smooth": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "If true, uses human-like micro-steps and easing with hardware mouseWheel events for anti-bot bypass.",
                 },
             },
             "required": [],
@@ -1415,6 +1425,11 @@ TOOLS = [
                     "default": False,
                     "description": "Inspect listeners on window/document",
                 },
+                "include_source": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, extracts the JavaScript source code snippet of each listener function using the debugger.",
+                },
             },
             "required": [],
         },
@@ -1543,6 +1558,195 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "browser_route_intercept",
+        "description": "Intercept network requests matching a URL pattern to mock responses (status, body, headers) or emulate network failures via CDP Fetch domain.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["mock", "clear", "list"],
+                    "default": "mock",
+                    "description": "Interception action: 'mock' (add mock rule), 'clear' (remove all mock rules and disable interception), 'list' (view active rules)",
+                },
+                "url_pattern": {
+                    "type": "string",
+                    "default": "*",
+                    "description": "URL pattern to match (e.g. '*api/v1/users*', 'https://example.com/checkout*')",
+                },
+                "status_code": {
+                    "type": "integer",
+                    "default": 200,
+                    "description": "HTTP status code to return when mocking (default 200)",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Response body string or JSON to return",
+                },
+                "headers": {
+                    "type": "object",
+                    "description": "Optional HTTP response headers dict (e.g. {'content-type': 'application/json'})",
+                },
+                "error_reason": {
+                    "type": "string",
+                    "description": "Optional network error reason to fail request with (e.g. 'Failed', 'Aborted', 'ConnectionRefused', 'AccessDenied')",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_discover_endpoints",
+        "description": "Discover API endpoints, REST routes, and GraphQL operations from loaded page scripts and network activity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_diff_snapshot",
+        "description": "Calculate structural changes (added/removed elements, text deltas, URL changes) between the current page state and a previous snapshot.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "previous_snapshot": {
+                    "type": "string",
+                    "description": "Optional previous snapshot text to diff against. If omitted, diffs against the last captured snapshot.",
+                },
+                "passive": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to take the new comparison snapshot in zero-JS passive mode.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_human_mouse",
+        "description": "Perform humanized, natural mouse movement or click along cubic Bezier curves with micro-jitter and Fitts's law easing (bypasses behavioral anti-bot heuristics).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["move", "click"],
+                    "default": "click",
+                    "description": "Mouse action to perform: 'move' or 'click'.",
+                },
+                "ref": {
+                    "type": "string",
+                    "description": "Target element ref (e.g. '@e2') to calculate center target coordinates.",
+                },
+                "selector": {
+                    "type": "string",
+                    "description": "Target CSS selector to calculate target coordinates.",
+                },
+                "x": {
+                    "type": "number",
+                    "description": "Target X screen coordinate.",
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Target Y screen coordinate.",
+                },
+                "steps": {
+                    "type": "integer",
+                    "default": 25,
+                    "description": "Number of intermediate interpolation points along the Bezier curve (10-100).",
+                },
+                "button": {
+                    "type": "string",
+                    "enum": ["left", "right", "middle"],
+                    "default": "left",
+                    "description": "Mouse button for click action.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_set_adblock",
+        "description": "Enable or configure built-in ad, tracker, and telemetry blocking using Network.setBlockedURLs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether ad/tracker blocking is active.",
+                },
+                "block_trackers": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to block analytics and telemetry domains in addition to ads.",
+                },
+                "custom_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of additional URL glob patterns to block.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_smart_find",
+        "description": "Semantically find interactive elements matching natural language intent (e.g., 'checkout button', 'login input') with relevance scoring and assign @ref targets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "description": "Natural language query describing the desired element or action.",
+                },
+                "role": {
+                    "type": "string",
+                    "description": "Optional ARIA role to filter (e.g., 'button', 'textbox', 'link').",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "Maximum number of matched candidate elements to return.",
+                },
+            },
+            "required": ["intent"],
+        },
+    },
+    {
+        "name": "browser_create_context",
+        "description": "Create an isolated incognito BrowserContext with separate cookies, cache, and storage.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_dispose_context",
+        "description": "Dispose and close an isolated BrowserContext and all its tabs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "browser_context_id": {
+                    "type": "string",
+                    "description": "ID of the BrowserContext to dispose.",
+                },
+            },
+            "required": ["browser_context_id"],
+        },
+    },
+    {
+        "name": "browser_list_contexts",
+        "description": "List all currently active isolated BrowserContext IDs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 
 
@@ -1577,6 +1781,9 @@ async def _handle_connect(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.switch_connection(host=host, port=port)
     server.host = host
     server.port = port
+    backend = detect_backend(host=host, port=port)
+    if isinstance(res, dict):
+        res["backend"] = backend
     return json.dumps(res, indent=2, ensure_ascii=False)
 
 
@@ -1593,6 +1800,9 @@ async def _handle_launch(server: "MCPServer", args: dict[str, Any]) -> str:
         profile_name=profile_name,
     )
     server.port = server.cdp.port
+    backend = detect_backend(host=server.host, port=server.port)
+    if isinstance(res, dict):
+        res["backend"] = backend
     return json.dumps(res, indent=2, ensure_ascii=False)
 
 
@@ -1702,8 +1912,12 @@ async def _handle_snapshot(server: "MCPServer", args: dict[str, Any]) -> str:
     selector = args.get("selector")
     in_viewport = args.get("in_viewport", False)
     max_elements = args.get("max_elements")
+    passive = args.get("passive", False)
     return await server.snapshot.capture_formatted(
-        selector=selector, in_viewport=in_viewport, max_elements=max_elements
+        selector=selector,
+        in_viewport=in_viewport,
+        max_elements=max_elements,
+        passive=passive,
     )
 
 
@@ -1807,6 +2021,7 @@ async def _handle_scroll(server: "MCPServer", args: dict[str, Any]) -> str:
     delta_x = args.get("delta_x", 0)
     ref = args.get("ref")
     selector = args.get("selector")
+    smooth = args.get("smooth", True)
     steps = [
         {
             "action": "scroll",
@@ -1814,6 +2029,7 @@ async def _handle_scroll(server: "MCPServer", args: dict[str, Any]) -> str:
             "delta_x": delta_x,
             "ref": ref,
             "selector": selector,
+            "smooth": smooth,
         }
     ]
     res = await server.batch.execute(steps)
@@ -2303,10 +2519,49 @@ async def _handle_screencast_stop(server: "MCPServer", args: dict[str, Any]) -> 
 @tool("browser_list_webmcp_tools")
 async def _handle_list_webmcp_tools(server: "MCPServer", args: dict[str, Any]) -> str:
     script = """
-    if (navigator.modelContext && typeof navigator.modelContext.getTools === 'function') {
-        return await navigator.modelContext.getTools();
-    }
-    throw new Error('WebMCP is not supported or not exposed on this page.');
+    (() => {
+        let tools = [];
+        if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigator.modelContext.getTools === 'function') {
+            try {
+                const mcTools = navigator.modelContext.getTools();
+                if (Array.isArray(mcTools)) tools.push(...mcTools);
+                else if (mcTools && Array.isArray(mcTools.tools)) tools.push(...mcTools.tools);
+                else if (mcTools) tools.push(mcTools);
+            } catch(e) {}
+        }
+        try {
+            const forms = document.querySelectorAll('form[toolname]');
+            for (const f of forms) {
+                const name = f.getAttribute('toolname');
+                if (!name) continue;
+                const desc = f.getAttribute('tooldescription') || '';
+                const autosubmit = f.hasAttribute('toolautosubmit');
+                const properties = {};
+                const required = [];
+                for (const el of f.querySelectorAll('input, select, textarea')) {
+                    const pName = el.name || el.getAttribute('name');
+                    if (!pName) continue;
+                    properties[pName] = {
+                        type: el.type === 'number' ? 'number' : (el.type === 'checkbox' ? 'boolean' : 'string'),
+                        description: el.getAttribute('toolparamdescription') || el.placeholder || '',
+                    };
+                    if (el.hasAttribute('required')) required.push(pName);
+                }
+                tools.push({
+                    name: name,
+                    description: desc,
+                    declarative: true,
+                    autosubmit: autosubmit,
+                    inputSchema: {
+                        type: 'object',
+                        properties: properties,
+                        required: required
+                    }
+                });
+            }
+        } catch(e) {}
+        return tools;
+    })()
     """
     try:
         res = await server.cdp.evaluate(script, await_promise=True)
@@ -2320,10 +2575,40 @@ async def _handle_execute_webmcp_tool(server: "MCPServer", args: dict[str, Any])
     name = args.get("name")
     tool_args = args.get("arguments", {})
     script = f"""
-    if (navigator.modelContext && typeof navigator.modelContext.executeTool === 'function') {{
-        return await navigator.modelContext.executeTool({json.dumps(name)}, {json.dumps(tool_args)});
-    }}
-    throw new Error('WebMCP is not supported or not exposed on this page.');
+    (async () => {{
+        const name = {json.dumps(name)};
+        const toolArgs = {json.dumps(tool_args)};
+        if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigator.modelContext.executeTool === 'function') {{
+            try {{
+                return await navigator.modelContext.executeTool(name, toolArgs);
+            }} catch(e) {{}}
+        }}
+        const form = document.querySelector(`form[toolname="${{name}}"]`);
+        if (form) {{
+            for (const [k, v] of Object.entries(toolArgs)) {{
+                const input = form.querySelector(`[name="${{k}}"]`);
+                if (input) {{
+                    if (input.type === 'checkbox') {{
+                        input.checked = Boolean(v);
+                    }} else {{
+                        input.value = String(v);
+                    }}
+                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+            }}
+            let promiseResult = null;
+            const submitEvent = new CustomEvent('submit', {{ bubbles: true, cancelable: true }});
+            submitEvent.agentInvoked = true;
+            submitEvent.respondWith = (p) => {{ promiseResult = p; }};
+            form.dispatchEvent(submitEvent);
+            if (promiseResult) {{
+                return await promiseResult;
+            }}
+            return {{ status: 'submitted', declarative: true, tool: name }};
+        }}
+        throw new Error(`WebMCP tool '${{name}}' not found.`);
+    }})()
     """
     try:
         res = await server.cdp.evaluate(script, await_promise=True)
@@ -2359,6 +2644,7 @@ async def _handle_get_event_listeners(
         ref=args.get("ref"),
         depth=args.get("depth", 1),
         ancestors=args.get("ancestors", False),
+        include_source=args.get("include_source", False),
     )
     return json.dumps(res, ensure_ascii=False, indent=2)
 
@@ -2431,6 +2717,105 @@ async def _handle_get_cache_storage(
         include_response_body=args.get("include_response_body", False),
     )
     return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_route_intercept")
+async def _handle_route_intercept(server: "MCPServer", args: dict[str, Any]) -> str:
+    action = args.get("action", "mock")
+    step = {"action": "route_intercept", "subaction": action, **args}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_discover_endpoints")
+async def _handle_discover_endpoints(
+    server: "MCPServer", args: dict[str, Any]
+) -> str:
+    step = {"action": "discover_endpoints"}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_diff_snapshot")
+async def _handle_diff_snapshot(server: "MCPServer", args: dict[str, Any]) -> str:
+    prev = args.get("previous_snapshot")
+    passive = args.get("passive", False)
+    step = {
+        "action": "diff_snapshot",
+        "previous_snapshot": prev,
+        "passive": passive,
+    }
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_human_mouse")
+async def _handle_human_mouse(server: "MCPServer", args: dict[str, Any]) -> str:
+    subaction = args.get("action", "click")
+    step = {
+        "action": "human_mouse",
+        "subaction": subaction,
+        "ref": args.get("ref"),
+        "selector": args.get("selector"),
+        "x": args.get("x"),
+        "y": args.get("y"),
+        "steps": args.get("steps", 25),
+        "button": args.get("button", "left"),
+    }
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_set_adblock")
+async def _handle_set_adblock(server: "MCPServer", args: dict[str, Any]) -> str:
+    enabled = args.get("enabled", True)
+    block_trackers = args.get("block_trackers", True)
+    custom_patterns = args.get("custom_patterns")
+    step = {
+        "action": "set_adblock",
+        "enabled": enabled,
+        "block_trackers": block_trackers,
+        "custom_patterns": custom_patterns,
+    }
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_smart_find")
+async def _handle_smart_find(server: "MCPServer", args: dict[str, Any]) -> str:
+    intent = args["intent"]
+    role = args.get("role")
+    max_results = args.get("max_results", 5)
+    step = {
+        "action": "smart_find",
+        "intent": intent,
+        "role": role,
+        "max_results": max_results,
+    }
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_create_context")
+async def _handle_create_context(server: "MCPServer", args: dict[str, Any]) -> str:
+    step = {"action": "create_context"}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_dispose_context")
+async def _handle_dispose_context(server: "MCPServer", args: dict[str, Any]) -> str:
+    ctx_id = args["browser_context_id"]
+    step = {"action": "dispose_context", "browser_context_id": ctx_id}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_list_contexts")
+async def _handle_list_contexts(server: "MCPServer", args: dict[str, Any]) -> str:
+    step = {"action": "list_contexts"}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
 
 
 # --- MCPServer Core ---

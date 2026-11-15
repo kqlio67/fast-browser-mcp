@@ -2,6 +2,8 @@ import argparse
 import asyncio
 import base64
 import json
+import os
+import sys
 
 import aiofiles
 
@@ -202,6 +204,12 @@ async def run_cli():
         "--full-page", action="store_true", help="Capture entire scrollable page"
     )
     ss_p.add_argument("--selector", help="Capture specific element")
+    ss_p.add_argument(
+        "--terminal",
+        "--inline",
+        action="store_true",
+        help="Render screenshot directly into terminal using Kitty graphics protocol",
+    )
 
     # window
     win_p = subparsers.add_parser(
@@ -772,6 +780,14 @@ async def run_cli():
             ]
         )
         print(json.dumps(res, ensure_ascii=False, indent=2))
+        if getattr(args, "terminal", False) and os.path.exists(args.out):
+            try:
+                with open(args.out, "rb") as f:
+                    b64_data = base64.b64encode(f.read()).decode("ascii")
+                sys.stdout.write(f"\033_Gf=100,a=T,m=0;{b64_data}\033\\\n")
+                sys.stdout.flush()
+            except Exception as e:
+                print(f"Could not render terminal image: {e}", file=sys.stderr)
 
     elif args.command == "back":
         res = await cdp.go_back(delta=args.delta)

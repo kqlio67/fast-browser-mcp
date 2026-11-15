@@ -40,6 +40,7 @@ class BatchStep(TypedDict, total=False):
 
 
 VALID_ACTIONS: set[str] = {
+    "adblock",
     "add_preload_script",
     "back",
     "block_resources",
@@ -56,9 +57,13 @@ VALID_ACTIONS: set[str] = {
     "console_logs",
     "coverage",
     "cpu_throttling",
+    "create_context",
     "css_styles",
+    "diff_snapshot",
+    "discover_endpoints",
     "dismiss_banners",
     "dismiss_dialogs",
+    "dispose_context",
     "double_click",
     "download_path",
     "drag_and_drop",
@@ -88,9 +93,13 @@ VALID_ACTIONS: set[str] = {
     "handle_dialog",
     "history",
     "hover",
+    "human_click",
+    "human_mouse",
+    "human_move",
     "import_session",
     "indexeddb",
     "isolated_tab",
+    "list_contexts",
     "list_extensions",
     "list_webmcp_tools",
     "metrics",
@@ -114,9 +123,11 @@ VALID_ACTIONS: set[str] = {
     "reload",
     "remove_preload_script",
     "right_click",
+    "route_intercept",
     "screenshot",
     "scroll",
     "select_option",
+    "set_adblock",
     "set_cookie",
     "set_cpu_throttling",
     "set_download_path",
@@ -128,6 +139,7 @@ VALID_ACTIONS: set[str] = {
     "set_timezone",
     "set_user_agent",
     "set_viewport",
+    "smart_find",
     "snapshot",
     "ssl_ignore",
     "start_coverage",
@@ -543,6 +555,49 @@ class BatchRunner:
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Moved mouse to ({mx}, {my})"
 
+                elif action in ("human_move", "human_mouse", "human_click"):
+                    sub = step.get("subaction") or ("click" if action == "human_click" else "move")
+                    tx = step.get("x")
+                    ty = step.get("y")
+                    ref = step.get("ref")
+                    selector = step.get("selector")
+
+                    if ref:
+                        id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
+                        js = f"""(() => {{
+                            const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                            if (!el) return null;
+                            const rect = el.getBoundingClientRect();
+                            return {{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }};
+                        }})()"""
+                        pos = await self.cdp.evaluate(js, session_id=session_id)
+                        if pos and isinstance(pos, dict) and "x" in pos:
+                            tx, ty = pos["x"], pos["y"]
+                    elif selector:
+                        js = f"""(() => {{
+                            const el = document.querySelector({json.dumps(selector)});
+                            if (!el) return null;
+                            const rect = el.getBoundingClientRect();
+                            return {{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }};
+                        }})()"""
+                        pos = await self.cdp.evaluate(js)
+                        if pos and isinstance(pos, dict) and "x" in pos:
+                            tx, ty = pos["x"], pos["y"]
+
+                    if tx is None or ty is None:
+                        raise ValueError(f"{action} requires target coordinates (x, y) or ref/selector")
+
+                    if sub == "click" or action == "human_click":
+                        btn = step.get("button", "left")
+                        await self.cdp.human_click(float(tx), float(ty), button=btn)
+                        step_res["detail"] = f"Human clicked ({btn}) at ({float(tx):.1f}, {float(ty):.1f})"
+                    else:
+                        steps_count = int(step.get("steps", 20))
+                        await self.cdp.human_move(float(tx), float(ty), steps=steps_count)
+                        step_res["detail"] = f"Human moved mouse to ({float(tx):.1f}, {float(ty):.1f})"
+                    step_res["status"] = "ok"
+
                 elif action == "drag_and_drop":
                     start_x = step.get("start_x")
                     start_y = step.get("start_y")
@@ -689,7 +744,14 @@ class BatchRunner:
                         await self.cdp.scroll_to_element(selector)
                         step_res["detail"] = f"Scrolled to selector '{selector}'"
                     else:
-                        await self.cdp.scroll(delta_x=delta_x, delta_y=delta_y)
+                        smooth = step.get("smooth", True)
+                        steps_count = step.get("steps", 5)
+                        await self.cdp.scroll(
+                            delta_x=delta_x,
+                            delta_y=delta_y,
+                            smooth=smooth,
+                            steps=steps_count,
+                        )
                         step_res["detail"] = f"Scrolled by ({delta_x}, {delta_y})"
                     step_res["status"] = "ok"
 
@@ -934,6 +996,7 @@ class BatchRunner:
                         selector=step.get("selector"),
                         in_viewport=step.get("in_viewport", False),
                         max_elements=step.get("max_elements"),
+                        passive=step.get("passive", False),
                     )
                     step_res["status"] = "ok"
                     step_res["snapshot"] = snap
@@ -1247,8 +1310,13 @@ class BatchRunner:
                     ref = step.get("ref")
                     depth = step.get("depth", 1)
                     ancestors = step.get("ancestors", False)
+                    include_source = step.get("include_source", False)
                     res = await self.cdp.get_event_listeners(
-                        selector=selector, ref=ref, depth=depth, ancestors=ancestors
+                        selector=selector,
+                        ref=ref,
+                        depth=depth,
+                        ancestors=ancestors,
+                        include_source=include_source,
                     )
                     step_res["status"] = "ok"
                     step_res["event_listeners"] = res
@@ -1406,10 +1474,49 @@ class BatchRunner:
 
                 elif action == "list_webmcp_tools":
                     script = """
-                    if (navigator.modelContext && typeof navigator.modelContext.getTools === 'function') {
-                        return await navigator.modelContext.getTools();
-                    }
-                    throw new Error('WebMCP is not supported or not exposed on this page.');
+                    (() => {
+                        let tools = [];
+                        if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigator.modelContext.getTools === 'function') {
+                            try {
+                                const mcTools = navigator.modelContext.getTools();
+                                if (Array.isArray(mcTools)) tools.push(...mcTools);
+                                else if (mcTools && Array.isArray(mcTools.tools)) tools.push(...mcTools.tools);
+                                else if (mcTools) tools.push(mcTools);
+                            } catch(e) {}
+                        }
+                        try {
+                            const forms = document.querySelectorAll('form[toolname]');
+                            for (const f of forms) {
+                                const name = f.getAttribute('toolname');
+                                if (!name) continue;
+                                const desc = f.getAttribute('tooldescription') || '';
+                                const autosubmit = f.hasAttribute('toolautosubmit');
+                                const properties = {};
+                                const required = [];
+                                for (const el of f.querySelectorAll('input, select, textarea')) {
+                                    const pName = el.name || el.getAttribute('name');
+                                    if (!pName) continue;
+                                    properties[pName] = {
+                                        type: el.type === 'number' ? 'number' : (el.type === 'checkbox' ? 'boolean' : 'string'),
+                                        description: el.getAttribute('toolparamdescription') || el.placeholder || '',
+                                    };
+                                    if (el.hasAttribute('required')) required.push(pName);
+                                }
+                                tools.push({
+                                    name: name,
+                                    description: desc,
+                                    declarative: true,
+                                    autosubmit: autosubmit,
+                                    inputSchema: {
+                                        type: 'object',
+                                        properties: properties,
+                                        required: required
+                                    }
+                                });
+                            }
+                        } catch(e) {}
+                        return tools;
+                    })()
                     """
                     val = await self.cdp.evaluate(script, await_promise=True)
                     step_res["status"] = "ok"
@@ -1419,14 +1526,128 @@ class BatchRunner:
                     name = str(step.get("name", ""))
                     tool_args = step.get("arguments", {})
                     script = f"""
-                    if (navigator.modelContext && typeof navigator.modelContext.executeTool === 'function') {{
-                        return await navigator.modelContext.executeTool({json.dumps(name)}, {json.dumps(tool_args)});
-                    }}
-                    throw new Error('WebMCP is not supported or not exposed on this page.');
+                    (async () => {{
+                        const name = {json.dumps(name)};
+                        const toolArgs = {json.dumps(tool_args)};
+                        if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigator.modelContext.executeTool === 'function') {{
+                            try {{
+                                return await navigator.modelContext.executeTool(name, toolArgs);
+                            }} catch(e) {{}}
+                        }}
+                        const form = document.querySelector(`form[toolname="${{name}}"]`);
+                        if (form) {{
+                            for (const [k, v] of Object.entries(toolArgs)) {{
+                                const input = form.querySelector(`[name="${{k}}"]`);
+                                if (input) {{
+                                    if (input.type === 'checkbox') {{
+                                        input.checked = Boolean(v);
+                                    }} else {{
+                                        input.value = String(v);
+                                    }}
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                }}
+                            }}
+                            let promiseResult = null;
+                            const submitEvent = new CustomEvent('submit', {{ bubbles: true, cancelable: true }});
+                            submitEvent.agentInvoked = true;
+                            submitEvent.respondWith = (p) => {{ promiseResult = p; }};
+                            form.dispatchEvent(submitEvent);
+                            if (promiseResult) {{
+                                return await promiseResult;
+                            }}
+                            return {{ status: 'submitted', declarative: true, tool: name }};
+                        }}
+                        throw new Error(`WebMCP tool '${{name}}' not found.`);
+                    }})()
                     """
                     val = await self.cdp.evaluate(script, await_promise=True)
                     step_res["status"] = "ok"
                     step_res["result"] = val
+
+                elif action == "route_intercept":
+                    subaction = step.get("subaction") or step.get("intercept_action") or "mock"
+                    if subaction == "mock":
+                        pattern = step.get("url_pattern", "*")
+                        status_code = step.get("status_code", 200)
+                        body = step.get("body")
+                        headers = step.get("headers")
+                        error_reason = step.get("error_reason")
+                        if not getattr(self.cdp, "_fetch_interception_enabled", False):
+                            await self.cdp.enable_fetch_interception()
+                        self.cdp.add_mock_route(
+                            pattern=pattern,
+                            status_code=status_code,
+                            body=body,
+                            headers=headers,
+                            error_reason=error_reason,
+                        )
+                        step_res["status"] = "ok"
+                        step_res["detail"] = f"Mock route registered for pattern {pattern!r}"
+                    elif subaction == "clear":
+                        self.cdp.clear_mock_routes()
+                        await self.cdp.disable_fetch_interception()
+                        step_res["status"] = "ok"
+                        step_res["detail"] = "All mock routes cleared"
+                    elif subaction == "list":
+                        step_res["status"] = "ok"
+                        step_res["mock_routes"] = self.cdp.list_mock_routes()
+                    else:
+                        raise ValueError(f"Unknown route_intercept subaction: {subaction!r}")
+
+                elif action == "discover_endpoints":
+                    endpoints_res = await self.cdp.discover_endpoints()
+                    step_res["status"] = "ok"
+                    step_res["endpoints"] = endpoints_res
+
+                elif action == "diff_snapshot":
+                    prev_snap = step.get("previous_snapshot")
+                    passive = step.get("passive", False)
+                    diff_res = await self.snapshot_tool.diff(
+                        previous_snapshot=prev_snap, passive=passive
+                    )
+                    step_res["status"] = "ok"
+                    step_res["diff"] = diff_res
+
+                elif action in ("adblock", "set_adblock"):
+                    enabled = step.get("enabled", True)
+                    block_trackers = step.get("block_trackers", True)
+                    custom_pats = step.get("custom_patterns")
+                    res = await self.cdp.set_adblock(
+                        enabled=enabled,
+                        block_trackers=block_trackers,
+                        custom_patterns=custom_pats,
+                    )
+                    step_res["status"] = "ok"
+                    step_res["adblock"] = res
+
+                elif action == "smart_find":
+                    intent = step.get("intent", "")
+                    role = step.get("role")
+                    max_res = step.get("max_results", 5)
+                    matches = await self.cdp.smart_find(
+                        intent=intent, role=role, max_results=max_res
+                    )
+                    step_res["status"] = "ok"
+                    step_res["matches"] = matches
+
+                elif action == "create_context":
+                    ctx_id = await self.cdp.create_browser_context()
+                    step_res["status"] = "ok"
+                    step_res["browser_context_id"] = ctx_id
+
+                elif action == "dispose_context":
+                    target_ctx_id = str(step.get("browser_context_id") or "")
+                    if not target_ctx_id:
+                        raise ValueError("dispose_context requires 'browser_context_id'")
+                    await self.cdp.dispose_browser_context(target_ctx_id)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Disposed browser context {target_ctx_id}"
+
+                elif action == "list_contexts":
+                    contexts = await self.cdp.list_browser_contexts()
+                    step_res["status"] = "ok"
+                    step_res["browser_contexts"] = contexts
 
                 elif action == "export_session":
                     session_data = await self.cdp.export_session()
