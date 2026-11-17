@@ -168,7 +168,7 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         self.cdp.activate_tab = AsyncMock(return_value=True)
         res6 = await self.batch.execute([{"action": "activate_tab", "target_id": "t1"}])
         self.assertTrue(res6["success"])
-        self.cdp.activate_tab.assert_awaited_once_with("t1")
+        self.cdp.activate_tab.assert_awaited_once_with("t1", bring_to_front=False)
 
         # type
         self.cdp.type_text = AsyncMock(return_value=True)

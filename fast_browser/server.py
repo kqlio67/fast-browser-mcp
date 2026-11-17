@@ -223,7 +223,7 @@ TOOLS = [
     },
     {
         "name": "browser_new_tab",
-        "description": "Open a new browser tab with the specified URL.",
+        "description": "Open a new browser tab with the specified URL in the background without stealing user focus.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -234,8 +234,8 @@ TOOLS = [
                 },
                 "activate": {
                     "type": "boolean",
-                    "default": True,
-                    "description": "Whether to bring the newly opened tab to the foreground",
+                    "default": False,
+                    "description": "Whether to switch the user's OS browser window to this tab (default: false, stays quietly in background)",
                 },
             },
             "required": [],
@@ -250,7 +250,12 @@ TOOLS = [
                 "target_id": {
                     "type": "string",
                     "description": "Target tab ID to activate (defaults to currently connected tab)",
-                }
+                },
+                "bring_to_front": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to switch the user's active browser window to this tab (default: true). If false, enables internal focus emulation without disturbing the user.",
+                },
             },
             "required": [],
         },
@@ -1931,7 +1936,8 @@ async def _handle_select_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     url = target.get("url") if target else ""
     if target and target.get("id"):
         try:
-            await server.cdp.activate_tab(target.get("id"))
+            # Enable internal focus emulation quietly without stealing user's active tab
+            await server.cdp.activate_tab(target.get("id"), bring_to_front=False)
         except Exception:
             pass
     return f"Connected to tab: {title} ({url})"
@@ -1940,11 +1946,12 @@ async def _handle_select_tab(server: "MCPServer", args: dict[str, Any]) -> str:
 @tool("browser_new_tab", requires_connection=False)
 async def _handle_new_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     url = args.get("url", "about:blank")
-    activate = args.get("activate", True)
+    activate = args.get("activate", False)
     res = await server.cdp.new_tab(url)
-    if activate and isinstance(res, dict) and res.get("id"):
+    if isinstance(res, dict) and res.get("id"):
         try:
-            await server.cdp.activate_tab(res.get("id"))
+            # Only switch user's window if explicitly requested via activate=True
+            await server.cdp.activate_tab(res.get("id"), bring_to_front=activate)
         except Exception:
             pass
     return json.dumps(res, ensure_ascii=False, indent=2)
@@ -1953,9 +1960,10 @@ async def _handle_new_tab(server: "MCPServer", args: dict[str, Any]) -> str:
 @tool("browser_activate_tab")
 async def _handle_activate_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     target_id = args.get("target_id")
-    ok = await server.cdp.activate_tab(target_id)
+    bring_to_front = args.get("bring_to_front", True)
+    ok = await server.cdp.activate_tab(target_id, bring_to_front=bring_to_front)
     return (
-        f"Tab {target_id or server.cdp.target_id} activated successfully (foreground focus enabled)"
+        f"Tab {target_id or server.cdp.target_id} activated successfully (bring_to_front={bring_to_front})"
         if ok
         else "Failed to activate tab"
     )

@@ -769,9 +769,12 @@ class BatchRunner:
 
                 elif action in ("activate_tab", "focus_tab"):
                     target_id = step.get("target_id")
-                    ok = await self.cdp.activate_tab(target_id)
+                    bring_to_front = bool(step.get("bring_to_front", False))
+                    ok = await self.cdp.activate_tab(target_id, bring_to_front=bring_to_front)
                     step_res["status"] = "ok" if ok else "failed"
-                    step_res["detail"] = f"Activated tab {target_id or self.cdp.target_id}"
+                    step_res["detail"] = (
+                        f"Activated tab {target_id or self.cdp.target_id} (bring_to_front={bring_to_front})"
+                    )
 
                 elif action == "scroll":
                     ref = step.get("ref")

@@ -524,15 +524,19 @@ class CDPClient:
         """Asynchronously close a tab without blocking the event loop."""
         return await asyncio.to_thread(self.close_tab_sync, target_id)
 
-    async def activate_tab(self, target_id: str | None = None) -> bool:
-        """Bring the specified or current browser tab to the foreground (prevents background throttling)."""
+    async def activate_tab(
+        self, target_id: str | None = None, bring_to_front: bool = True
+    ) -> bool:
+        """Activate the tab. If bring_to_front is True, switches the physical browser tab to foreground.
+        Always enables internal focus emulation to prevent background timer throttling without stealing user focus."""
         tid = target_id or self.target_id
         if not tid:
             return False
-        try:
-            await self.send("Target.activateTarget", {"targetId": tid})
-        except Exception as e:
-            logger.debug(f"Target.activateTarget failed: {e}")
+        if bring_to_front:
+            try:
+                await self.send("Target.activateTarget", {"targetId": tid})
+            except Exception as e:
+                logger.debug(f"Target.activateTarget failed: {e}")
         try:
             await self.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
         except Exception:
