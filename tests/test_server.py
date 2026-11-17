@@ -14,12 +14,12 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
 
     def test_tool_count_and_exact_match(self):
         self.assertEqual(
-            len(TOOLS), 90, "Expected exactly 90 registered tools in TOOLS"
+            len(TOOLS), 93, "Expected exactly 93 registered tools in TOOLS"
         )
         self.assertEqual(
             len(TOOL_REGISTRY),
-            90,
-            "Expected exactly 90 registered handlers in TOOL_REGISTRY",
+            93,
+            "Expected exactly 93 registered handlers in TOOL_REGISTRY",
         )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())
@@ -495,6 +495,30 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         res_str3 = await self.server.handle_call("browser_dispose_context", {"browser_context_id": "ctx-123"})
         res3 = json.loads(res_str3)
         self.assertEqual(res3["results"][0]["status"], "ok")
+
+    async def test_handle_call_page_state(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "page_state": {"seq": 5, "url": "https://test.com", "backend": "chrome"}}]}
+        )
+        res_str = await self.server.handle_call("browser_get_page_state", {})
+        res = json.loads(res_str)
+        self.assertEqual(res["results"][0]["page_state"]["seq"], 5)
+
+    async def test_handle_call_paint_damage(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "paint_damage": {"status": "ok", "damaged_count": 2}}]}
+        )
+        res_str = await self.server.handle_call("browser_paint_damage", {"action": "get"})
+        res = json.loads(res_str)
+        self.assertEqual(res["results"][0]["paint_damage"]["damaged_count"], 2)
+
+    async def test_handle_call_turbo_mode(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "turbo_mode": {"status": "ok", "turbo": True}}]}
+        )
+        res_str = await self.server.handle_call("browser_turbo_mode", {"enabled": True})
+        res = json.loads(res_str)
+        self.assertTrue(res["results"][0]["turbo_mode"]["turbo"])
 
 
 if __name__ == "__main__":

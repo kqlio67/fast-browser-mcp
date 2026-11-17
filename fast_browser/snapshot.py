@@ -553,9 +553,44 @@ class PageSnapshot:
         self, previous_snapshot: str | None = None, passive: bool = False
     ) -> dict[str, Any]:
         """Compare current snapshot against previous snapshot."""
+        # Fast path check: if state seq is unchanged and previous_snapshot was not manually passed,
+        # we can verify via zero-cost DOM mutation counter!
+        if previous_snapshot is None and self.last_snapshot_text:
+            try:
+                state = await self.cdp.get_page_state()
+                curr_seq = state.get("seq")
+                last_seq = getattr(self, "_last_diff_seq", None)
+                if (
+                    curr_seq is not None
+                    and last_seq is not None
+                    and curr_seq == last_seq
+                ):
+                    return {
+                        "changed": False,
+                        "url_changed": False,
+                        "seq": curr_seq,
+                        "added_count": 0,
+                        "removed_count": 0,
+                        "added_elements": [],
+                        "removed_elements": [],
+                        "text_delta": "",
+                        "previous_url": state.get("url", ""),
+                        "current_url": state.get("url", ""),
+                        "detail": "DOM sequence unchanged (zero-cost mutation cache hit)",
+                    }
+                self._last_diff_seq = curr_seq
+            except Exception:
+                pass
+
         prev = previous_snapshot or self.last_snapshot_text or ""
         curr = await self.capture_formatted(passive=passive)
-        return diff_snapshots(prev, curr)
+        res = diff_snapshots(prev, curr)
+        try:
+            state = await self.cdp.get_page_state()
+            self._last_diff_seq = state.get("seq")
+        except Exception:
+            pass
+        return res
 
 
 def diff_snapshots(prev_text: str, curr_text: str) -> dict[str, Any]:

@@ -251,6 +251,9 @@ Add Fast Browser MCP as an MCP stdio server executing:
 | `browser_create_context` | Create an isolated incognito BrowserContext with clean session, storage, and cookies |
 | `browser_dispose_context` | Close and clean up an isolated BrowserContext and all associated tabs |
 | `browser_list_contexts` | List all active isolated BrowserContext IDs |
+| `browser_get_page_state` | **Zero-Cost State & Mutation Check**: Lightweight page state and DOM mutation sequence counter (`seq`) across Chrome and Kitesurf |
+| `browser_paint_damage` | **Visual Damage Tracking**: Detect elements whose rendered pixels or DOM subtrees changed after actions, without screenshot diffing |
+| `browser_turbo_mode` | **Headless Turbo Scraping**: Toggle turbo mode (disables layout/raster in Kitesurf; blocks media/fonts/animations in Chrome) |
 | `browser_list_webmcp_tools` | List WebMCP tools exposed by the web page |
 | `browser_execute_webmcp_tool` | Execute a WebMCP tool exposed by the web page |
 | `browser_get_css_styles` | Inspect computed styles, applied stylesheet rules, bounding rect, and attached event listeners for any element by `@ref` or CSS selector |

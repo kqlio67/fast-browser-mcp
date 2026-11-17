@@ -88,6 +88,8 @@ VALID_ACTIONS: set[str] = {
     "get_event_listeners",
     "get_html",
     "get_indexeddb",
+    "get_page_state",
+    "get_paint_damage",
     "get_storage",
     "grant_permissions",
     "handle_dialog",
@@ -102,6 +104,7 @@ VALID_ACTIONS: set[str] = {
     "list_contexts",
     "list_extensions",
     "list_webmcp_tools",
+    "mark_paint_damage",
     "metrics",
     "mouse_move",
     "mute",
@@ -113,6 +116,8 @@ VALID_ACTIONS: set[str] = {
     "new_isolated_tab",
     "observe_coverage",
     "open_system_page",
+    "page_state",
+    "paint_damage",
     "paste",
     "pdf",
     "performance_metrics",
@@ -128,6 +133,7 @@ VALID_ACTIONS: set[str] = {
     "scroll",
     "select_option",
     "set_adblock",
+    "set_control_value",
     "set_cookie",
     "set_cpu_throttling",
     "set_download_path",
@@ -137,6 +143,7 @@ VALID_ACTIONS: set[str] = {
     "set_media_theme",
     "set_page_zoom",
     "set_timezone",
+    "set_turbo_mode",
     "set_user_agent",
     "set_viewport",
     "smart_find",
@@ -152,6 +159,7 @@ VALID_ACTIONS: set[str] = {
     "theme",
     "throttling",
     "timezone",
+    "turbo_mode",
     "upload_file",
     "wait",
     "wait_download",
@@ -1648,6 +1656,54 @@ class BatchRunner:
                     contexts = await self.cdp.list_browser_contexts()
                     step_res["status"] = "ok"
                     step_res["browser_contexts"] = contexts
+
+                elif action in ("page_state", "get_page_state"):
+                    state = await self.cdp.get_page_state()
+                    step_res["status"] = "ok"
+                    step_res["page_state"] = state
+
+                elif action == "set_control_value":
+                    control_val = step.get("value")
+                    ref = step.get("ref")
+                    sel = step.get("selector")
+                    nid = step.get("node_id")
+                    ctrl_res = await self.cdp.set_control_value(
+                        value=control_val, ref=ref, selector=sel, node_id=nid
+                    )
+                    step_res["status"] = "ok"
+                    step_res["control"] = ctrl_res
+
+                elif action in (
+                    "paint_damage",
+                    "mark_paint_damage",
+                    "get_paint_damage",
+                ):
+                    sub = step.get("subaction") or (
+                        "mark"
+                        if action == "mark_paint_damage"
+                        else (
+                            "get"
+                            if action == "get_paint_damage"
+                            else step.get("action_type", "get")
+                        )
+                    )
+                    if sub == "mark":
+                        res = await self.cdp.mark_paint_damage()
+                        step_res["status"] = "ok"
+                        step_res["paint_damage"] = res
+                    else:
+                        res = await self.cdp.get_paint_damage_since(
+                            exclude_ref=step.get("exclude_ref"),
+                            exclude_selector=step.get("exclude_selector"),
+                        )
+                        step_res["status"] = "ok"
+                        step_res["paint_damage"] = res
+
+                elif action in ("turbo_mode", "set_turbo_mode"):
+                    turbo_en = step.get("enabled", True)
+                    turbo_res = await self.cdp.set_turbo_mode(enabled=turbo_en)
+                    step_res["status"] = "ok"
+                    step_res["turbo_mode"] = turbo_res
 
                 elif action == "export_session":
                     session_data = await self.cdp.export_session()

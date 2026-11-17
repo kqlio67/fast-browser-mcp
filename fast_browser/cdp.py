@@ -74,8 +74,23 @@ class CDPClient:
         self._fetch_interception_enabled: bool = False
         self._mouse_x: float = 0.0
         self._mouse_y: float = 0.0
+        self._backend: str | None = None
         self.network = NetworkMonitor()
         self.console = ConsoleMonitor()
+
+    @property
+    def is_kitesurf(self) -> bool:
+        return self.get_backend() == "kitesurf"
+
+    def get_backend(self) -> str:
+        if self._backend is None or self._backend == "unknown":
+            try:
+                from .launcher import detect_backend
+
+                self._backend = detect_backend(host=self.host, port=self.port)
+            except Exception:
+                self._backend = "unknown"
+        return self._backend
 
     @property
     def is_connected(self) -> bool:
@@ -92,13 +107,16 @@ class CDPClient:
 
     def list_targets(self) -> list[dict[str, Any]]:
         url = f"http://{self.host}:{self.port}/json"
-        try:
-            resp = requests.get(url, timeout=3)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            logger.error(f"Failed to list CDP targets from {url}: {e}")
-            return []
+        for attempt in range(2):
+            try:
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                logger.debug(f"Attempt {attempt + 1} failed to list CDP targets from {url}: {e}")
+                if attempt == 0:
+                    time.sleep(0.3)
+        return []
 
     async def list_targets_async(self) -> list[dict[str, Any]]:
         """Asynchronously list CDP targets without blocking the event loop."""
@@ -174,6 +192,9 @@ class CDPClient:
 
             if target_id:
                 target = await self.get_target_by_id_async(target_id)
+                if not target:
+                    # In some environments (e.g. Kitesurf isolate recycling), target ID changes dynamically.
+                    target = await self.find_target_async()
             else:
                 target = await self.find_target_async(target_query)
             if not target:
@@ -428,7 +449,7 @@ class CDPClient:
         return result_obj.get("value")
 
     async def navigate(
-        self, url: str, wait_until_loaded: bool = True, timeout: float = 15.0
+        self, url: str, wait_until_loaded: bool = True, timeout: float = 30.0
     ) -> dict[str, Any]:
         t0 = asyncio.get_running_loop().time()
         res = await self.send("Page.navigate", {"url": url}, timeout=timeout)
@@ -1824,13 +1845,23 @@ class CDPClient:
 
     # Network Idle
     async def wait_for_network_idle(
-        self, idle_time: float = 0.5, timeout: float = 10.0
+        self,
+        idle_time: float = 0.5,
+        timeout: float = 10.0,
+        check_critical: bool = True,
     ) -> bool:
-        """Wait until there are no active in-flight network requests for at least idle_time seconds."""
+        """Wait until there are no active in-flight network requests for at least idle_time seconds and critical resources are loaded."""
         t0 = asyncio.get_running_loop().time()
         while (asyncio.get_running_loop().time() - t0) < timeout:
             if self.network.is_network_idle(idle_time):
-                return True
+                if not check_critical:
+                    return True
+                try:
+                    pending = await self.has_pending_critical_resources()
+                    if not pending:
+                        return True
+                except Exception:
+                    return True
             await asyncio.sleep(0.05)
         return False
 
@@ -2238,6 +2269,7 @@ class CDPClient:
             self.port = int(port)
         self.target_id = None
         self.ws_url = None
+        self._backend = None
         await self.connect()
         title = ""
         url = ""
@@ -2965,4 +2997,340 @@ class CDPClient:
         return await smart_find_elements(
             self, intent=intent, role=role, max_results=max_results
         )
+
+    async def get_page_state(self) -> dict[str, Any]:
+        """Get quick lightweight state of the page including DOM mutation sequence counter."""
+        if self.is_kitesurf:
+            try:
+                res = await self.send("Kitesurf.getPageState")
+                return {
+                    "seq": res.get("seq", 0),
+                    "scroll_x": res.get("scrollX", 0),
+                    "scroll_y": res.get("scrollY", 0),
+                    "url": res.get("href", ""),
+                    "title": res.get("title", ""),
+                    "backend": "kitesurf",
+                }
+            except Exception as e:
+                logger.debug(f"Kitesurf.getPageState failed, falling back: {e}")
+
+        # Universal fallback for Chrome/Chromium & generic CDP:
+        # Injects/reads window.__fb_dom_seq maintained by MutationObserver
+        js = """(() => {
+            if (!window.__fb_dom_observer && typeof MutationObserver !== 'undefined') {
+                window.__fb_dom_seq = 1;
+                try {
+                    window.__fb_dom_observer = new MutationObserver(() => {
+                        window.__fb_dom_seq = (window.__fb_dom_seq || 1) + 1;
+                    });
+                    const target = document.documentElement || document.body;
+                    if (target) {
+                        window.__fb_dom_observer.observe(target, {
+                            childList: true, subtree: true, attributes: true, characterData: true
+                        });
+                    }
+                } catch(e) {}
+            }
+            return {
+                seq: window.__fb_dom_seq || 1,
+                scroll_x: window.scrollX || window.pageXOffset || 0,
+                scroll_y: window.scrollY || window.pageYOffset || 0,
+                url: document.location.href,
+                title: document.title,
+                backend: "chrome"
+            };
+        })()"""
+        try:
+            val = await self.evaluate(js)
+            if isinstance(val, dict):
+                return val
+        except Exception:
+            pass
+        return {
+            "seq": 0,
+            "scroll_x": 0,
+            "scroll_y": 0,
+            "url": "",
+            "title": "",
+            "backend": "generic",
+        }
+
+    async def set_control_value(
+        self,
+        value: Any,
+        ref: str | int | None = None,
+        selector: str | None = None,
+        node_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Universally and instantly set form control values (inputs, checkboxes, radios, selects)."""
+        if self.is_kitesurf:
+            target_node_id = node_id
+            if target_node_id is None and selector:
+                try:
+                    doc = await self.send("DOM.getDocument")
+                    found = await self.send(
+                        "DOM.querySelector",
+                        {"nodeId": doc["root"]["nodeId"], "selector": selector},
+                    )
+                    target_node_id = found.get("nodeId")
+                except Exception:
+                    pass
+            if target_node_id is not None:
+                try:
+                    res = await self.send(
+                        "Kitesurf.setControlValue",
+                        {"nodeId": target_node_id, "value": value},
+                    )
+                    return {"status": "ok", "backend": "kitesurf", "detail": res}
+                except Exception as e:
+                    logger.debug(f"Kitesurf.setControlValue failed, falling back: {e}")
+
+        # Universal fallback for Chrome/Chromium & DOM elements (works across React, Vue, Angular):
+        ref_id = None
+        session_id = None
+        if ref is not None:
+            ref_id = int(str(ref).replace("@", ""))
+            session_id = self.ref_session_map.get(ref_id)
+
+        js = f"""(() => {{
+            let el = null;
+            const refId = {json.dumps(ref_id)};
+            const sel = {json.dumps(selector)};
+            if (refId !== null && window.__fb_refs && window.__fb_refs[refId]) {{
+                el = window.__fb_refs[refId];
+            }} else if (sel) {{
+                el = document.querySelector(sel);
+            }}
+            if (!el) return {{ status: "error", error: "Element not found" }};
+
+            const val = {json.dumps(value)};
+            const tag = el.tagName.toLowerCase();
+            const type = (el.type || '').toLowerCase();
+
+            if (type === 'checkbox' || type === 'radio') {{
+                const checked = (val === true || val === 'true' || val === 1 || val === '1');
+                el.checked = checked;
+            }} else {{
+                // Native prototype setter bypasses React synthetic value override
+                const prototype = tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+                if (descriptor && descriptor.set) {{
+                    descriptor.set.call(el, String(val));
+                }} else {{
+                    el.value = String(val);
+                }}
+            }}
+
+            // Dispatch universal synthetic events
+            try {{ el.dispatchEvent(new Event('beforeinput', {{ bubbles: true, cancelable: true }})); }} catch(e) {{}}
+            try {{ el.dispatchEvent(new Event('input', {{ bubbles: true, cancelable: true }})); }} catch(e) {{}}
+            try {{ el.dispatchEvent(new Event('change', {{ bubbles: true, cancelable: true }})); }} catch(e) {{}}
+
+            return {{ status: "ok", value: el.value !== undefined ? el.value : el.checked, backend: "universal_dom" }};
+        }})()"""
+        res = await self.evaluate(js, session_id=session_id)
+        if isinstance(res, dict):
+            return res
+        return {"status": "ok", "backend": "universal_dom"}
+
+    async def mark_paint_damage(self) -> dict[str, Any]:
+        """Mark reference point for visual paint damage tracking."""
+        if self.is_kitesurf:
+            try:
+                res = await self.send("Kitesurf.markPaintDamage")
+                return {"status": "ok", "backend": "kitesurf", "detail": res}
+            except Exception as e:
+                logger.debug(f"Kitesurf.markPaintDamage failed: {e}")
+
+        # Chrome universal fallback: mark current dom seq and timestamp
+        js = """(() => {
+            window.__fb_paint_mark_seq = window.__fb_dom_seq || 1;
+            window.__fb_paint_mark_time = performance.now();
+            window.__fb_damaged_nodes = [];
+            if (!window.__fb_damage_observer && typeof MutationObserver !== 'undefined') {
+                window.__fb_damage_observer = new MutationObserver((mutations) => {
+                    for (const m of mutations) {
+                        const target = m.target;
+                        if (target && target.nodeType === 1) {
+                            if (!window.__fb_damaged_nodes.includes(target)) {
+                                window.__fb_damaged_nodes.push(target);
+                            }
+                        }
+                    }
+                });
+                const root = document.documentElement || document.body;
+                if (root) window.__fb_damage_observer.observe(root, { childList: true, subtree: true, attributes: true });
+            }
+            return { status: "ok", backend: "chrome", mark_seq: window.__fb_paint_mark_seq };
+        })()"""
+        val = await self.evaluate(js)
+        if isinstance(val, dict):
+            return val
+        return {"status": "ok", "backend": "chrome"}
+
+    async def get_paint_damage_since(
+        self,
+        exclude_ref: str | None = None,
+        exclude_selector: str | None = None,
+    ) -> dict[str, Any]:
+        """Get elements whose visual appearance or DOM subtree changed since mark_paint_damage."""
+        if self.is_kitesurf:
+            try:
+                params: dict[str, Any] = {}
+                res = await self.send("Kitesurf.getPaintDamageSince", params)
+                return {
+                    "status": "ok",
+                    "backend": "kitesurf",
+                    "damaged_count": len(res.get("nodeIds", [])),
+                    "node_ids": res.get("nodeIds", []),
+                    "overflow": res.get("overflow", False),
+                }
+            except Exception as e:
+                logger.debug(f"Kitesurf.getPaintDamageSince failed: {e}")
+
+        # Chrome universal fallback
+        js = """(() => {
+            const currentSeq = window.__fb_dom_seq || 1;
+            const markSeq = window.__fb_paint_mark_seq || 1;
+            const damaged = window.__fb_damaged_nodes || [];
+            window.__fb_damaged_nodes = [];
+
+            window.__fb_refs = window.__fb_refs || {};
+            let nextId = 1;
+            while (window.__fb_refs[nextId]) nextId++;
+
+            const details = [];
+            for (const el of damaged.slice(0, 20)) {
+                let ref = null;
+                for (const [k, v] of Object.entries(window.__fb_refs)) {
+                    if (v === el) { ref = '@' + k; break; }
+                }
+                if (!ref) {
+                    const newId = nextId++;
+                    window.__fb_refs[newId] = el;
+                    ref = '@' + newId;
+                }
+                details.push({
+                    ref: ref,
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || undefined,
+                    class: el.className || undefined,
+                    text: (el.innerText || el.textContent || '').slice(0, 60).trim()
+                });
+            }
+
+            return {
+                status: "ok",
+                backend: "chrome",
+                seq_delta: currentSeq - markSeq,
+                damaged_count: damaged.length,
+                damaged_elements: details
+            };
+        })()"""
+        val = await self.evaluate(js)
+        if isinstance(val, dict):
+            return val
+        return {
+            "status": "ok",
+            "backend": "chrome",
+            "damaged_count": 0,
+            "damaged_elements": [],
+        }
+
+    async def set_turbo_mode(self, enabled: bool = True) -> dict[str, Any]:
+        """Toggle turbo headless scraping mode (disables layout/raster in Kitesurf, blocks media/fonts/animations in Chrome)."""
+        if self.is_kitesurf:
+            try:
+                mode = "off" if enabled else "full"
+                res = await self.send("Kitesurf.setLayoutMode", {"mode": mode})
+                return {
+                    "status": "ok",
+                    "backend": "kitesurf",
+                    "turbo": enabled,
+                    "layout_mode": mode,
+                    "detail": res,
+                }
+            except Exception as e:
+                logger.debug(f"Kitesurf.setLayoutMode failed: {e}")
+
+        # Chrome universal turbo mode: block images, media, webfonts, and disable CSS animations
+        if enabled:
+            turbo_patterns = [
+                "*.png",
+                "*.jpg",
+                "*.jpeg",
+                "*.webp",
+                "*.gif",
+                "*.svg",
+                "*.woff",
+                "*.woff2",
+                "*.ttf",
+                "*.mp4",
+                "*.webm",
+            ]
+            await self.send("Network.enable")
+            await self.send("Network.setBlockedURLs", {"urls": turbo_patterns})
+            css_inject = """(() => {
+                let style = document.getElementById('__fb_turbo_style');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = '__fb_turbo_style';
+                    style.textContent = `
+                        *, *::before, *::after {
+                            animation-duration: 0.001s !important;
+                            animation-delay: 0s !important;
+                            transition-duration: 0.001s !important;
+                            transition-delay: 0s !important;
+                        }
+                    `;
+                    (document.head || document.documentElement).appendChild(style);
+                }
+                return true;
+            })()"""
+            await self.evaluate(css_inject)
+            return {
+                "status": "ok",
+                "backend": "chrome",
+                "turbo": True,
+                "blocked_resources": len(turbo_patterns),
+            }
+        else:
+            await self.send("Network.setBlockedURLs", {"urls": []})
+            css_remove = """(() => {
+                const s = document.getElementById('__fb_turbo_style');
+                if (s) s.remove();
+                return true;
+            })()"""
+            await self.evaluate(css_remove)
+            return {"status": "ok", "backend": "chrome", "turbo": False}
+
+    async def has_pending_critical_resources(self) -> bool:
+        """Check if critical blocking resources (fonts, stylesheets, critical fetches) are still pending."""
+        if self.is_kitesurf:
+            try:
+                res = await self.send("Kitesurf.hasPendingCriticalResources")
+                by_target = res.get("byTarget", {})
+                if by_target and isinstance(by_target, dict):
+                    return any(
+                        t.get("pending", False)
+                        for t in by_target.values()
+                        if isinstance(t, dict)
+                    )
+                return bool(res.get("pending", False))
+            except Exception:
+                pass
+
+        # Chrome fallback: check document.fonts.status, document.readyState
+        js = """(() => {
+            if (document.readyState !== 'complete') return true;
+            if (document.fonts && document.fonts.status !== 'loaded') return true;
+            return false;
+        })()"""
+        try:
+            val = await self.evaluate(js)
+            if bool(val):
+                return True
+        except Exception:
+            pass
+        return False
 

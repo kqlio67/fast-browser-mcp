@@ -133,6 +133,75 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res_dispose["success"])
         self.cdp.dispose_browser_context.assert_awaited_once_with("ctx-999")
 
+    async def test_universal_new_actions(self):
+        self.cdp.get_page_state = AsyncMock(return_value={"seq": 10, "url": "https://example.com", "backend": "chrome"})
+        self.cdp.set_control_value = AsyncMock(return_value={"status": "ok", "value": "test-val"})
+        self.cdp.mark_paint_damage = AsyncMock(return_value={"status": "ok"})
+        self.cdp.get_paint_damage_since = AsyncMock(return_value={"status": "ok", "damaged_count": 1})
+        self.cdp.set_turbo_mode = AsyncMock(return_value={"status": "ok", "turbo": True})
+
+        # page_state
+        res1 = await self.batch.execute([{"action": "get_page_state"}])
+        self.assertTrue(res1["success"])
+        self.assertEqual(res1["results"][0]["page_state"]["seq"], 10)
+
+        # set_control_value
+        res2 = await self.batch.execute([{"action": "set_control_value", "value": "test-val", "selector": "#input"}])
+        self.assertTrue(res2["success"])
+        self.cdp.set_control_value.assert_awaited_once_with(value="test-val", ref=None, selector="#input", node_id=None)
+
+        # paint_damage mark & get
+        res3 = await self.batch.execute([{"action": "mark_paint_damage"}])
+        self.assertTrue(res3["success"])
+        self.cdp.mark_paint_damage.assert_awaited_once()
+
+        res4 = await self.batch.execute([{"action": "get_paint_damage"}])
+        self.assertTrue(res4["success"])
+        self.cdp.get_paint_damage_since.assert_awaited_once_with(exclude_ref=None, exclude_selector=None)
+
+        # turbo_mode
+        res5 = await self.batch.execute([{"action": "turbo_mode", "enabled": True}])
+        self.assertTrue(res5["success"])
+        self.cdp.set_turbo_mode.assert_awaited_once_with(enabled=True)
+
+
+class TestUniversalCdpMethods(unittest.IsolatedAsyncioTestCase):
+    async def test_kitesurf_vs_chrome_get_page_state(self):
+        from fast_browser.cdp import CDPClient
+
+        client = CDPClient()
+
+        # 1. Kitesurf backend
+        client._backend = "kitesurf"
+        client.send = AsyncMock(return_value={"seq": 42, "scrollX": 0, "scrollY": 150, "href": "https://kitesurf.dev", "title": "Kitesurf"})
+        state_k = await client.get_page_state()
+        self.assertEqual(state_k["seq"], 42)
+        self.assertEqual(state_k["backend"], "kitesurf")
+
+        # 2. Chrome backend fallback
+        client._backend = "chrome"
+        client.evaluate = AsyncMock(return_value={"seq": 7, "scroll_x": 0, "scroll_y": 50, "url": "https://google.com", "title": "Google", "backend": "chrome"})
+        state_c = await client.get_page_state()
+        self.assertEqual(state_c["seq"], 7)
+        self.assertEqual(state_c["backend"], "chrome")
+
+    async def test_turbo_mode_cdp(self):
+        from fast_browser.cdp import CDPClient
+
+        client = CDPClient()
+        client._backend = "kitesurf"
+        client.send = AsyncMock(return_value={"mode": "off"})
+        res_k = await client.set_turbo_mode(True)
+        self.assertEqual(res_k["backend"], "kitesurf")
+        self.assertTrue(res_k["turbo"])
+
+        client._backend = "chrome"
+        client.send = AsyncMock()
+        client.evaluate = AsyncMock()
+        res_c = await client.set_turbo_mode(True)
+        self.assertEqual(res_c["backend"], "chrome")
+        self.assertTrue(res_c["turbo"])
+
 
 if __name__ == "__main__":
     unittest.main()

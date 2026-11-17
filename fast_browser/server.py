@@ -1747,6 +1747,54 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "browser_get_page_state",
+        "description": "Get lightweight page state and DOM mutation sequence counter for zero-cost change detection across Chrome and Kitesurf.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_paint_damage",
+        "description": "Track and detect elements whose rendered pixels or DOM subtrees changed after actions, without expensive screenshot diffing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["mark", "get"],
+                    "default": "get",
+                    "description": "Action to perform: 'mark' to set a reference point, or 'get' to retrieve changed elements since mark.",
+                },
+                "exclude_ref": {
+                    "type": "string",
+                    "description": "Optional @ref to exclude from the report (such as the button that was just clicked).",
+                },
+                "exclude_selector": {
+                    "type": "string",
+                    "description": "Optional CSS selector to exclude from the report.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_turbo_mode",
+        "description": "Toggle turbo headless scraping mode (disables layout and raster in Kitesurf; blocks media, webfonts, and heavy animations in Chrome).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether turbo mode is enabled.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -2814,6 +2862,35 @@ async def _handle_dispose_context(server: "MCPServer", args: dict[str, Any]) -> 
 @tool("browser_list_contexts")
 async def _handle_list_contexts(server: "MCPServer", args: dict[str, Any]) -> str:
     step = {"action": "list_contexts"}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_get_page_state")
+async def _handle_get_page_state(server: "MCPServer", args: dict[str, Any]) -> str:
+    step = {"action": "get_page_state"}
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_paint_damage")
+async def _handle_paint_damage(server: "MCPServer", args: dict[str, Any]) -> str:
+    step = {
+        "action": "paint_damage",
+        "subaction": args.get("action", "get"),
+        "exclude_ref": args.get("exclude_ref"),
+        "exclude_selector": args.get("exclude_selector"),
+    }
+    res = await server.batch.execute([step])
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_turbo_mode")
+async def _handle_turbo_mode(server: "MCPServer", args: dict[str, Any]) -> str:
+    step = {
+        "action": "turbo_mode",
+        "enabled": args.get("enabled", True),
+    }
     res = await server.batch.execute([step])
     return json.dumps(res, ensure_ascii=False)
 
