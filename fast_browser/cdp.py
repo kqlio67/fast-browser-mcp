@@ -2183,7 +2183,7 @@ class CDPClient:
         js = """(() => {
             let count = 0;
             const dismissWords = [
-                'not now', 'не зараз', 'не сейчас', 'accept all', 'accept', 'allow all',
+                'not now', 'accept all', 'accept', 'allow all',
                 'i accept', 'agree', 'got it', 'dismiss', 'close', 'reject all',
                 'save info', 'later', 'skip'
             ];
