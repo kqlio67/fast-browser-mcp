@@ -221,6 +221,37 @@ class CDPClient:
             await self.send("DOM.enable")
             await self.send("Network.enable", {"maxPostDataSize": 65536})
 
+            # Persistent zero-cost DOM mutation tracker for Chromium
+            try:
+                await self.send(
+                    "Page.addScriptToEvaluateOnNewDocument",
+                    {
+                        "source": """
+                        (() => {
+                            if (window.__fb_dom_seq_installed) return;
+                            window.__fb_dom_seq_installed = true;
+                            window.__fb_dom_seq = 1;
+                            try {
+                                const obs = new MutationObserver(() => { window.__fb_dom_seq = (window.__fb_dom_seq || 1) + 1; });
+                                const attach = () => {
+                                    const target = document.documentElement || document.body || document;
+                                    if (target) {
+                                        obs.observe(target, { childList: true, subtree: true, attributes: true, characterData: true });
+                                    }
+                                };
+                                if (document.readyState === 'loading') {
+                                    document.addEventListener('DOMContentLoaded', attach, { once: true });
+                                } else {
+                                    attach();
+                                }
+                            } catch (e) {}
+                        })();
+                        """
+                    },
+                )
+            except Exception as e:
+                logger.debug(f"addScriptToEvaluateOnNewDocument failed: {e}")
+
             # Auto-attach to child targets (e.g. cross-origin iframes) in flattened mode
             try:
                 await self.send(
@@ -492,6 +523,21 @@ class CDPClient:
     async def close_tab(self, target_id: str | None = None) -> bool:
         """Asynchronously close a tab without blocking the event loop."""
         return await asyncio.to_thread(self.close_tab_sync, target_id)
+
+    async def activate_tab(self, target_id: str | None = None) -> bool:
+        """Bring the specified or current browser tab to the foreground (prevents background throttling)."""
+        tid = target_id or self.target_id
+        if not tid:
+            return False
+        try:
+            await self.send("Target.activateTarget", {"targetId": tid})
+        except Exception as e:
+            logger.debug(f"Target.activateTarget failed: {e}")
+        try:
+            await self.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
+        except Exception:
+            pass
+        return True
 
     async def wait_for_dom_ready(self, timeout: float = 10.0):
         t0 = asyncio.get_running_loop().time()
@@ -843,10 +889,23 @@ class CDPClient:
             js = f"""(() => {{
                 const el = document.querySelector({json.dumps(selector)});
                 if (!el) return false;
+                el.scrollIntoView({{block: 'center', inline: 'center'}});
+                el.focus();
+                const setVal = (v) => {{
+                    const proto = Object.getPrototypeOf(el);
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set ||
+                                   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) {{
+                        setter.call(el, v);
+                    }} else {{
+                        el.value = v;
+                    }}
+                }};
                 if ({json.dumps(clear)}) {{
-                    el.value = '';
+                    setVal('');
                 }}
-                el.value = {json.dumps(text)};
+                setVal({json.dumps(text)});
+                el.dispatchEvent(new InputEvent('beforeinput', {{ bubbles: true, cancelable: true, data: {json.dumps(text)} }}));
                 el.dispatchEvent(new Event('input', {{ bubbles: true }}));
                 el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                 return true;
@@ -875,6 +934,27 @@ class CDPClient:
                     {"type": "keyDown", "text": ch, "unmodifiedText": ch},
                 )
                 await self.send("Input.dispatchKeyEvent", {"type": "keyUp"})
+        return True
+
+    async def type_text(
+        self,
+        text: str,
+        delay_ms: float = 25.0,
+        press_enter: bool = False,
+    ) -> bool:
+        """Type text character by character into the currently focused element using native CDP Input.dispatchKeyEvent with realistic timing."""
+        import random
+
+        for ch in text:
+            kd = {"type": "keyDown", "text": ch, "unmodifiedText": ch}
+            ku = {"type": "keyUp"}
+            await self.send("Input.dispatchKeyEvent", kd)
+            await self.send("Input.dispatchKeyEvent", ku)
+            if delay_ms > 0:
+                jitter = random.uniform(0.75, 1.25) * delay_ms
+                await asyncio.sleep(jitter / 1000.0)
+        if press_enter:
+            await self.press_key("Enter")
         return True
 
     async def scroll(

@@ -40,6 +40,7 @@ class BatchStep(TypedDict, total=False):
 
 
 VALID_ACTIONS: set[str] = {
+    "activate_tab",
     "adblock",
     "add_preload_script",
     "back",
@@ -80,6 +81,7 @@ VALID_ACTIONS: set[str] = {
     "fill_form",
     "find",
     "find_in_page",
+    "focus_tab",
     "forward",
     "geolocation",
     "get_cache_storage",
@@ -160,6 +162,8 @@ VALID_ACTIONS: set[str] = {
     "throttling",
     "timezone",
     "turbo_mode",
+    "type",
+    "type_text",
     "upload_file",
     "wait",
     "wait_download",
@@ -253,6 +257,8 @@ class BatchRunner:
                 return f"Step {idx + 1} ('fill'): missing 'text' to fill"
         if act == "paste" and step.get("text") is None:
             return f"Step {idx + 1} ('paste'): missing 'text' to paste"
+        if act in ("type", "type_text") and step.get("text") is None:
+            return f"Step {idx + 1} ('{act}'): missing 'text' to type"
         if act == "press_key" and not step.get("key"):
             return f"Step {idx + 1} ('press_key'): missing 'key' name"
         if act == "eval" and not (step.get("script") or step.get("expression")):
@@ -730,6 +736,42 @@ class BatchRunner:
                     await self.cdp.press_key(key)
                     step_res["status"] = "ok"
                     step_res["detail"] = f"Pressed key {key!r}"
+
+                elif action in ("type", "type_text"):
+                    text = step.get("text", "")
+                    delay_ms = float(step.get("delay_ms", 25.0))
+                    press_enter = bool(step.get("press_enter", False))
+                    ref = step.get("ref")
+                    selector = step.get("selector")
+                    if ref:
+                        id_num = int(str(ref).replace("@", ""))
+                        session_id = self.cdp.ref_session_map.get(id_num)
+                        js = f"""(() => {{
+                            const el = window.__fb_refs && window.__fb_refs[{id_num}];
+                            if (!el) return false;
+                            el.scrollIntoView({{block: 'center', inline: 'center'}});
+                            el.focus();
+                            return true;
+                        }})()"""
+                        await self.cdp.evaluate(js, session_id=session_id)
+                    elif selector:
+                        js = f"""(() => {{
+                            const el = document.querySelector({json.dumps(selector)});
+                            if (!el) return false;
+                            el.scrollIntoView({{block: 'center', inline: 'center'}});
+                            el.focus();
+                            return true;
+                        }})()"""
+                        await self.cdp.evaluate(js)
+                    await self.cdp.type_text(str(text), delay_ms=delay_ms, press_enter=press_enter)
+                    step_res["status"] = "ok"
+                    step_res["detail"] = f"Typed {len(str(text))} character(s) with {delay_ms}ms delay"
+
+                elif action in ("activate_tab", "focus_tab"):
+                    target_id = step.get("target_id")
+                    ok = await self.cdp.activate_tab(target_id)
+                    step_res["status"] = "ok" if ok else "failed"
+                    step_res["detail"] = f"Activated tab {target_id or self.cdp.target_id}"
 
                 elif action == "scroll":
                     ref = step.get("ref")

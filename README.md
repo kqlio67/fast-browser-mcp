@@ -201,7 +201,8 @@ Add Fast Browser MCP as an MCP stdio server executing:
 |---|---|
 | `browser_list_tabs` | List all open browser tabs (ID, title, URL) |
 | `browser_select_tab` | Switch active connection to a tab by title or URL query |
-| `browser_new_tab` | Open a new tab with a given URL |
+| `browser_new_tab` | Open a new tab with a given URL (supports `activate: true` to immediately bring to foreground) |
+| `browser_activate_tab` | Bring a browser tab to the foreground, activating focus and disabling background rendering/timer throttling |
 | `browser_close_tab` | Close a tab by target ID (or close current tab) |
 | `browser_navigate` | Navigate active tab to a URL |
 | `browser_reload` | Reload the page (with optional `ignore_cache` option) |
@@ -214,6 +215,7 @@ Add Fast Browser MCP as an MCP stdio server executing:
 |---|---|
 | `browser_click` | Click an element by snapshot ref (`@1`, `@2`) or CSS selector (supports `trusted: true` for native CDP hardware input with `isTrusted: true`) |
 | `browser_fill` | Type text into an input element by ref or CSS selector (supports `paste: true` for instant CDP text insertion, `press_enter: true`, and auto-detects `contenteditable` fields) |
+| `browser_type` | Type text character-by-character with realistic hardware keystrokes (`Input.dispatchKeyEvent`), human jitter, and optional element focus (anti-bot bypass) |
 | `browser_fill_form` | Fill multiple form elements in one fast batch execution |
 | `browser_press_key` | Dispatch keyboard key event (`Enter`, `Escape`, `Tab`, `ArrowDown`, etc.) |
 | `browser_scroll` | Scroll page by $(\Delta x, \Delta y)$ or scroll element into view |

@@ -164,6 +164,18 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res5["success"])
         self.cdp.set_turbo_mode.assert_awaited_once_with(enabled=True)
 
+        # activate_tab
+        self.cdp.activate_tab = AsyncMock(return_value=True)
+        res6 = await self.batch.execute([{"action": "activate_tab", "target_id": "t1"}])
+        self.assertTrue(res6["success"])
+        self.cdp.activate_tab.assert_awaited_once_with("t1")
+
+        # type
+        self.cdp.type_text = AsyncMock(return_value=True)
+        res7 = await self.batch.execute([{"action": "type", "text": "hello", "delay_ms": 15.0}])
+        self.assertTrue(res7["success"])
+        self.cdp.type_text.assert_awaited_once_with("hello", delay_ms=15.0, press_enter=False)
+
 
 class TestUniversalCdpMethods(unittest.IsolatedAsyncioTestCase):
     async def test_kitesurf_vs_chrome_get_page_state(self):
@@ -201,6 +213,24 @@ class TestUniversalCdpMethods(unittest.IsolatedAsyncioTestCase):
         res_c = await client.set_turbo_mode(True)
         self.assertEqual(res_c["backend"], "chrome")
         self.assertTrue(res_c["turbo"])
+
+    async def test_activate_tab_and_type_text_cdp(self):
+        from fast_browser.cdp import CDPClient
+
+        client = CDPClient()
+        client.target_id = "test-tab-id"
+        client.send = AsyncMock(return_value={})
+
+        ok = await client.activate_tab()
+        self.assertTrue(ok)
+        client.send.assert_any_await("Target.activateTarget", {"targetId": "test-tab-id"})
+        client.send.assert_any_await("Emulation.setFocusEmulationEnabled", {"enabled": True})
+
+        # Test type_text
+        client.send.reset_mock()
+        ok_type = await client.type_text("hi", delay_ms=0, press_enter=False)
+        self.assertTrue(ok_type)
+        self.assertEqual(client.send.await_count, 4)  # 2 chars * (keyDown + keyUp)
 
 
 if __name__ == "__main__":

@@ -231,6 +231,25 @@ TOOLS = [
                     "type": "string",
                     "default": "about:blank",
                     "description": "URL to open in the new tab",
+                },
+                "activate": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to bring the newly opened tab to the foreground",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "browser_activate_tab",
+        "description": "Bring a browser tab to the foreground, activating focus and disabling background rendering/timer throttling.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_id": {
+                    "type": "string",
+                    "description": "Target tab ID to activate (defaults to currently connected tab)",
                 }
             },
             "required": [],
@@ -418,6 +437,38 @@ TOOLS = [
                 }
             },
             "required": ["key"],
+        },
+    },
+    {
+        "name": "browser_type",
+        "description": "Type text character-by-character with realistic hardware keystrokes (Input.dispatchKeyEvent) into the active or specified element. Essential for anti-bot bypass, games, and sensitive inputs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Text to type character-by-character",
+                },
+                "ref": {
+                    "type": "string",
+                    "description": "Element snapshot reference (e.g. '@1', '@2') to focus before typing",
+                },
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector of element to focus before typing",
+                },
+                "delay_ms": {
+                    "type": "number",
+                    "default": 25.0,
+                    "description": "Inter-keystroke delay in milliseconds",
+                },
+                "press_enter": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to press Enter key after typing",
+                },
+            },
+            "required": ["text"],
         },
     },
     {
@@ -1878,14 +1929,36 @@ async def _handle_select_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     target = await server.cdp.find_target_async(query)
     title = target.get("title") if target else query
     url = target.get("url") if target else ""
+    if target and target.get("id"):
+        try:
+            await server.cdp.activate_tab(target.get("id"))
+        except Exception:
+            pass
     return f"Connected to tab: {title} ({url})"
 
 
 @tool("browser_new_tab", requires_connection=False)
 async def _handle_new_tab(server: "MCPServer", args: dict[str, Any]) -> str:
     url = args.get("url", "about:blank")
+    activate = args.get("activate", True)
     res = await server.cdp.new_tab(url)
+    if activate and isinstance(res, dict) and res.get("id"):
+        try:
+            await server.cdp.activate_tab(res.get("id"))
+        except Exception:
+            pass
     return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@tool("browser_activate_tab")
+async def _handle_activate_tab(server: "MCPServer", args: dict[str, Any]) -> str:
+    target_id = args.get("target_id")
+    ok = await server.cdp.activate_tab(target_id)
+    return (
+        f"Tab {target_id or server.cdp.target_id} activated successfully (foreground focus enabled)"
+        if ok
+        else "Failed to activate tab"
+    )
 
 
 @tool("browser_close_tab", requires_connection=False)
@@ -2059,6 +2132,27 @@ async def _handle_fill(server: "MCPServer", args: dict[str, Any]) -> str:
 async def _handle_press_key(server: "MCPServer", args: dict[str, Any]) -> str:
     key = args.get("key", "Enter")
     steps = [{"action": "press_key", "key": key}]
+    res = await server.batch.execute(steps)
+    return json.dumps(res, ensure_ascii=False)
+
+
+@tool("browser_type")
+async def _handle_type(server: "MCPServer", args: dict[str, Any]) -> str:
+    text = args.get("text", "")
+    ref = args.get("ref")
+    selector = args.get("selector")
+    delay_ms = args.get("delay_ms", 25.0)
+    press_enter = args.get("press_enter", False)
+    steps = [
+        {
+            "action": "type",
+            "text": text,
+            "ref": ref,
+            "selector": selector,
+            "delay_ms": delay_ms,
+            "press_enter": press_enter,
+        }
+    ]
     res = await server.batch.execute(steps)
     return json.dumps(res, ensure_ascii=False)
 

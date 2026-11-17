@@ -14,12 +14,12 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
 
     def test_tool_count_and_exact_match(self):
         self.assertEqual(
-            len(TOOLS), 93, "Expected exactly 93 registered tools in TOOLS"
+            len(TOOLS), 95, "Expected exactly 95 registered tools in TOOLS"
         )
         self.assertEqual(
             len(TOOL_REGISTRY),
-            93,
-            "Expected exactly 93 registered handlers in TOOL_REGISTRY",
+            95,
+            "Expected exactly 95 registered handlers in TOOL_REGISTRY",
         )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())
@@ -519,6 +519,19 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         res_str = await self.server.handle_call("browser_turbo_mode", {"enabled": True})
         res = json.loads(res_str)
         self.assertTrue(res["results"][0]["turbo_mode"]["turbo"])
+
+    async def test_handle_call_activate_tab(self):
+        self.server.cdp.activate_tab = AsyncMock(return_value=True)
+        res_str = await self.server.handle_call("browser_activate_tab", {"target_id": "tab123"})
+        self.assertIn("activated successfully", res_str)
+
+    async def test_handle_call_type(self):
+        self.server.batch.execute = AsyncMock(
+            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "detail": "Typed 4 characters"}]}
+        )
+        res_str = await self.server.handle_call("browser_type", {"text": "test", "delay_ms": 10.0})
+        res = json.loads(res_str)
+        self.assertEqual(res["results"][0]["status"], "ok")
 
 
 if __name__ == "__main__":
