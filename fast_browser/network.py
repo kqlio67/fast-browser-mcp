@@ -594,7 +594,7 @@ class NetworkMonitor:
                 "version": "1.2",
                 "creator": {
                     "name": "fast-browser-mcp",
-                    "version": "0.12.0",
+                    "version": "0.13.0",
                 },
                 "pages": [],
                 "entries": har_entries,
