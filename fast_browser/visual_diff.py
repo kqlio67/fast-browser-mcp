@@ -26,9 +26,7 @@ def _paeth_predictor(a: int, b: int, c: int) -> int:
     return c
 
 
-def _unfilter_scanlines(
-    raw: bytes, width: int, height: int, bpp: int
-) -> bytearray:
+def _unfilter_scanlines(raw: bytes, width: int, height: int, bpp: int) -> bytearray:
     row_bytes = width * bpp
     out = bytearray(height * row_bytes)
     stride = row_bytes + 1
@@ -61,11 +59,7 @@ def _unfilter_scanlines(
             for x in range(row_bytes):
                 a = out[out_start + x - bpp] if x >= bpp else 0
                 b = out[prev_start + x] if prev_start is not None else 0
-                c = (
-                    out[prev_start + x - bpp]
-                    if (prev_start is not None and x >= bpp)
-                    else 0
-                )
+                c = out[prev_start + x - bpp] if (prev_start is not None and x >= bpp) else 0
                 out[out_start + x] = (row[x] + _paeth_predictor(a, b, c)) & 0xFF
         else:
             # Fallback for unexpected filter
@@ -100,9 +94,7 @@ def decode_png(data: bytes) -> tuple[int, int, bytearray]:
         offset += 12 + length
 
         if ctype == b"IHDR":
-            width, height, bit_depth, color_type = struct.unpack(
-                ">IIBB", cdata[:10]
-            )
+            width, height, bit_depth, color_type = struct.unpack(">IIBB", cdata[:10])
         elif ctype == b"IDAT":
             idat_chunks.append(cdata)
         elif ctype == b"IEND":
@@ -168,9 +160,7 @@ def encode_png(width: int, height: int, rgba: bytes | bytearray) -> bytes:
     ihdr_chunk = struct.pack(">I", 13) + b"IHDR" + ihdr_data + ihdr_crc
 
     idat_crc = struct.pack(">I", zlib.crc32(b"IDAT" + compressed))
-    idat_chunk = (
-        struct.pack(">I", len(compressed)) + b"IDAT" + compressed + idat_crc
-    )
+    idat_chunk = struct.pack(">I", len(compressed)) + b"IDAT" + compressed + idat_crc
 
     iend_crc = struct.pack(">I", zlib.crc32(b"IEND"))
     iend_chunk = struct.pack(">I", 0) + b"IEND" + iend_crc
@@ -228,10 +218,7 @@ def compare_screenshots(
     bytes2 = _load_image_bytes(image2)
 
     # Fast-path 1: exact binary equality (0.01 ms)
-    if (
-        bytes1 == bytes2
-        or hashlib.sha256(bytes1).digest() == hashlib.sha256(bytes2).digest()
-    ):
+    if bytes1 == bytes2 or hashlib.sha256(bytes1).digest() == hashlib.sha256(bytes2).digest():
         w, h, _ = decode_png(bytes1)
         pixels = w * h
         return {
@@ -357,9 +344,7 @@ def compare_screenshots(
         "status": status,
         "compared_pixels": total_pixels,
         "changed_pixels": changed_pixels,
-        "changed_ratio": round(changed_pixels / total_pixels, 6)
-        if total_pixels > 0
-        else 0.0,
+        "changed_ratio": round(changed_pixels / total_pixels, 6) if total_pixels > 0 else 0.0,
         "maximum_channel_delta": max_delta,
         "mean_channel_delta": round(mean_delta, 4),
         "channel_threshold": channel_threshold,

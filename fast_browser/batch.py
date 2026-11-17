@@ -183,9 +183,7 @@ class BatchRunner:
         self.snapshot_tool = PageSnapshot(cdp)
         self.allowed_dir = allowed_dir or os.environ.get("FAST_BROWSER_ALLOWED_DIR")
 
-    def validate_path(
-        self, path: str, must_exist: bool = False, for_write: bool = False
-    ) -> str:
+    def validate_path(self, path: str, must_exist: bool = False, for_write: bool = False) -> str:
         """Validate and resolve file path according to sandboxing rules."""
         if not path or not isinstance(path, str):
             raise ValueError("Invalid file path: path must be a non-empty string")
@@ -214,9 +212,7 @@ class BatchRunner:
     def validate_step(cls, step: Any, idx: int) -> str | None:
         """Validate an individual batch step dictionary."""
         if not isinstance(step, dict):
-            return (
-                f"Step {idx + 1}: expected action dictionary, got {type(step).__name__}"
-            )
+            return f"Step {idx + 1}: expected action dictionary, got {type(step).__name__}"
         action = step.get("action")
         if not action or not isinstance(action, str):
             return f"Step {idx + 1}: missing or non-string 'action'"
@@ -239,7 +235,9 @@ class BatchRunner:
             or step.get("selector")
             or (step.get("x") is not None and step.get("y") is not None)
         ):
-            return f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
+            return (
+                f"Step {idx + 1} ('{act}'): requires 'ref', 'selector', or ('x', 'y') coordinates"
+            )
         if act == "drag_and_drop" and not (
             (step.get("from_ref") and step.get("to_ref"))
             or (
@@ -356,14 +354,8 @@ class BatchRunner:
                                 return null;
                             }})()"""
                             coords = await self.cdp.evaluate(coord_js)
-                            if (
-                                isinstance(coords, dict)
-                                and "x" in coords
-                                and "y" in coords
-                            ):
-                                await self.cdp.trusted_click(
-                                    float(coords["x"]), float(coords["y"])
-                                )
+                            if isinstance(coords, dict) and "x" in coords and "y" in coords:
+                                await self.cdp.trusted_click(float(coords["x"]), float(coords["y"]))
                                 clicked = True
                                 step_res["detail"] = f"Clicked ref {ref} (trusted)"
                         if not clicked:
@@ -391,7 +383,9 @@ class BatchRunner:
                         await self.cdp.trusted_click(float(step["x"]), float(step["y"]))
                         step_res["detail"] = f"Clicked at ({step['x']}, {step['y']}) (trusted)"
                     else:
-                        raise ValueError("Click action requires 'ref', 'selector', or (x, y) coordinates")
+                        raise ValueError(
+                            "Click action requires 'ref', 'selector', or (x, y) coordinates"
+                        )
 
                     wait_for = step.get("wait_for")
                     if wait_for:
@@ -405,9 +399,7 @@ class BatchRunner:
                                 wait_for, timeout_ms=step.get("timeout_ms", 5000)
                             )
                     if step.get("wait_idle"):
-                        await self.cdp.wait_for_network_idle(
-                            idle_time=0.5, timeout=5.0
-                        )
+                        await self.cdp.wait_for_network_idle(idle_time=0.5, timeout=5.0)
 
                     step_res["status"] = "ok"
 
@@ -432,9 +424,7 @@ class BatchRunner:
                             }}
                             return true;
                         }})()"""
-                        success = await self.cdp.evaluate(
-                            focus_js, session_id=session_id
-                        )
+                        success = await self.cdp.evaluate(focus_js, session_id=session_id)
                         if not success:
                             raise RuntimeError(
                                 f"Reference {ref} not found or expired. Run 'snapshot' again."
@@ -457,15 +447,11 @@ class BatchRunner:
                         }})()"""
                         success = await self.cdp.evaluate(focus_js)
                         if not success:
-                            raise RuntimeError(
-                                f"Element '{selector}' not found for paste"
-                            )
+                            raise RuntimeError(f"Element '{selector}' not found for paste")
                         if clear:
                             await self.cdp.press_key("Backspace")
                         await self.cdp.insert_text(text)
-                        step_res["detail"] = (
-                            f"Pasted into selector '{selector}': {text!r}"
-                        )
+                        step_res["detail"] = f"Pasted into selector '{selector}': {text!r}"
                     else:
                         await self.cdp.insert_text(text)
                         step_res["detail"] = f"Pasted text: {text!r}"
@@ -481,9 +467,7 @@ class BatchRunner:
                     y = step.get("y")
                     opt_id_num = int(str(ref).replace("@", "")) if ref else None
                     session_id = (
-                        self.cdp.ref_session_map.get(opt_id_num)
-                        if opt_id_num is not None
-                        else None
+                        self.cdp.ref_session_map.get(opt_id_num) if opt_id_num is not None else None
                     )
                     if ref or selector:
                         if session_id:
@@ -496,9 +480,7 @@ class BatchRunner:
                             }})()"""
                             success = await self.cdp.evaluate(js, session_id=session_id)
                             if not success:
-                                raise RuntimeError(
-                                    "Element not found for double_click in iframe"
-                                )
+                                raise RuntimeError("Element not found for double_click in iframe")
                             step_res["status"] = "ok"
                             step_res["detail"] = f"Double clicked ref {ref} in iframe"
                             continue
@@ -525,9 +507,7 @@ class BatchRunner:
                     y = step.get("y")
                     opt_id_num = int(str(ref).replace("@", "")) if ref else None
                     session_id = (
-                        self.cdp.ref_session_map.get(opt_id_num)
-                        if opt_id_num is not None
-                        else None
+                        self.cdp.ref_session_map.get(opt_id_num) if opt_id_num is not None else None
                     )
                     if ref or selector:
                         if session_id:
@@ -540,9 +520,7 @@ class BatchRunner:
                             }})()"""
                             success = await self.cdp.evaluate(js, session_id=session_id)
                             if not success:
-                                raise RuntimeError(
-                                    "Element not found for right_click in iframe"
-                                )
+                                raise RuntimeError("Element not found for right_click in iframe")
                             step_res["status"] = "ok"
                             step_res["detail"] = f"Right clicked ref {ref} in iframe"
                             continue
@@ -600,16 +578,22 @@ class BatchRunner:
                             tx, ty = pos["x"], pos["y"]
 
                     if tx is None or ty is None:
-                        raise ValueError(f"{action} requires target coordinates (x, y) or ref/selector")
+                        raise ValueError(
+                            f"{action} requires target coordinates (x, y) or ref/selector"
+                        )
 
                     if sub == "click" or action == "human_click":
                         btn = step.get("button", "left")
                         await self.cdp.human_click(float(tx), float(ty), button=btn)
-                        step_res["detail"] = f"Human clicked ({btn}) at ({float(tx):.1f}, {float(ty):.1f})"
+                        step_res["detail"] = (
+                            f"Human clicked ({btn}) at ({float(tx):.1f}, {float(ty):.1f})"
+                        )
                     else:
                         steps_count = int(step.get("steps", 20))
                         await self.cdp.human_move(float(tx), float(ty), steps=steps_count)
-                        step_res["detail"] = f"Human moved mouse to ({float(tx):.1f}, {float(ty):.1f})"
+                        step_res["detail"] = (
+                            f"Human moved mouse to ({float(tx):.1f}, {float(ty):.1f})"
+                        )
                     step_res["status"] = "ok"
 
                 elif action == "drag_and_drop":
@@ -639,9 +623,7 @@ class BatchRunner:
                         end_x, end_y = coords["end_x"], coords["end_y"]
 
                     if any(v is None for v in [start_x, start_y, end_x, end_y]):
-                        raise ValueError(
-                            "drag_and_drop requires coordinates or from_ref/to_ref"
-                        )
+                        raise ValueError("drag_and_drop requires coordinates or from_ref/to_ref")
 
                     await self.cdp.drag_and_drop(
                         float(start_x or 0),
@@ -714,9 +696,7 @@ class BatchRunner:
                             timeout_ms=step.get("timeout_ms", 3000),
                             press_enter=False,
                         )
-                        step_res["detail"] = (
-                            f"Filled selector '{selector}' with {text!r}"
-                        )
+                        step_res["detail"] = f"Filled selector '{selector}' with {text!r}"
                     else:
                         raise ValueError("Fill action requires 'ref' or 'selector'")
 
@@ -765,7 +745,9 @@ class BatchRunner:
                         await self.cdp.evaluate(js)
                     await self.cdp.type_text(str(text), delay_ms=delay_ms, press_enter=press_enter)
                     step_res["status"] = "ok"
-                    step_res["detail"] = f"Typed {len(str(text))} character(s) with {delay_ms}ms delay"
+                    step_res["detail"] = (
+                        f"Typed {len(str(text))} character(s) with {delay_ms}ms delay"
+                    )
 
                 elif action in ("activate_tab", "focus_tab"):
                     target_id = step.get("target_id")
@@ -840,13 +822,9 @@ class BatchRunner:
                             raise RuntimeError(f"Could not select option in ref {ref}")
                         step_res["detail"] = f"Selected option in ref {ref}"
                     elif selector:
-                        success = await self.cdp.select_option(
-                            selector, value=value, text=text
-                        )
+                        success = await self.cdp.select_option(selector, value=value, text=text)
                         if not success:
-                            raise RuntimeError(
-                                f"Could not select option in selector '{selector}'"
-                            )
+                            raise RuntimeError(f"Could not select option in selector '{selector}'")
                         step_res["detail"] = f"Selected option in selector '{selector}'"
                     else:
                         raise ValueError("select_option requires 'ref' or 'selector'")
@@ -952,9 +930,7 @@ class BatchRunner:
                     safe_files = [self.validate_path(f, must_exist=True) for f in files]
                     await self.cdp.upload_file(selector, safe_files)
                     step_res["status"] = "ok"
-                    step_res["detail"] = (
-                        f"Uploaded {len(safe_files)} files to '{selector}'"
-                    )
+                    step_res["detail"] = f"Uploaded {len(safe_files)} files to '{selector}'"
 
                 elif action == "get_html":
                     html = await self.cdp.get_html()
@@ -964,18 +940,14 @@ class BatchRunner:
                         safe_path = self.validate_path(path, for_write=True)
                         async with aiofiles.open(safe_path, "w", encoding="utf-8") as f:
                             await f.write(html)
-                        step_res["detail"] = (
-                            f"HTML saved to {safe_path} ({len(html)} chars)"
-                        )
+                        step_res["detail"] = f"HTML saved to {safe_path} ({len(html)} chars)"
                     else:
                         step_res["html"] = html[:10000]
 
                 elif action in ("pdf", "print_to_pdf"):
                     path = step.get("save_path", "page.pdf")
                     safe_path = self.validate_path(path, for_write=True)
-                    b64 = await self.cdp.print_to_pdf(
-                        landscape=step.get("landscape", False)
-                    )
+                    b64 = await self.cdp.print_to_pdf(landscape=step.get("landscape", False))
                     async with aiofiles.open(safe_path, "wb") as pdf_f:
                         await pdf_f.write(base64.b64decode(b64))
                     step_res["status"] = "ok"
@@ -987,9 +959,7 @@ class BatchRunner:
                     step_res["storage"] = data
 
                 elif action == "export_traffic":
-                    path = step.get("file_path") or step.get(
-                        "save_path", "traffic_export.json"
-                    )
+                    path = step.get("file_path") or step.get("save_path", "traffic_export.json")
                     safe_path = self.validate_path(path, for_write=True)
                     fmt = step.get("format", "json")
                     redact_val = step.get("redact_sensitive_headers", True)
@@ -1024,9 +994,7 @@ class BatchRunner:
                         found = await self.cdp.wait_for_selector(
                             selector, timeout_ms=step.get("timeout_ms", 5000)
                         )
-                        step_res["detail"] = (
-                            f"Waited for selector '{selector}' (found={found})"
-                        )
+                        step_res["detail"] = f"Waited for selector '{selector}' (found={found})"
                     elif text:
                         found = await self.cdp.wait_for_text(
                             text, timeout_ms=step.get("timeout_ms", 5000)
@@ -1037,9 +1005,7 @@ class BatchRunner:
                 elif action == "eval":
                     script = step.get("script") or step.get("expression")
                     if not script:
-                        raise ValueError(
-                            "Missing 'script' or 'expression' for eval action"
-                        )
+                        raise ValueError("Missing 'script' or 'expression' for eval action")
                     val = await self.cdp.evaluate(script)
                     step_res["status"] = "ok"
                     step_res["result"] = val
@@ -1083,9 +1049,7 @@ class BatchRunner:
                 elif action in ("ws_messages", "websocket_messages"):
                     direction = step.get("direction")
                     limit = step.get("limit", 20)
-                    frames = self.cdp.network.list_ws_frames(
-                        direction=direction, limit=limit
-                    )
+                    frames = self.cdp.network.list_ws_frames(direction=direction, limit=limit)
                     step_res["status"] = "ok"
                     step_res["ws_frames"] = frames
 
@@ -1105,9 +1069,7 @@ class BatchRunner:
                         )
                         step_res["path"] = safe_path
                     else:
-                        step_res["detail"] = (
-                            f"Screenshot captured ({len(data_b64)} b64 bytes)"
-                        )
+                        step_res["detail"] = f"Screenshot captured ({len(data_b64)} b64 bytes)"
                     step_res["data_b64"] = data_b64
                     step_res["status"] = "ok"
 
@@ -1148,9 +1110,7 @@ class BatchRunner:
                 elif action == "extension_action":
                     ext_id = step.get("id") or step.get("extension_id")
                     ext_action = (
-                        step.get("action_type")
-                        or step.get("subaction")
-                        or step.get("action")
+                        step.get("action_type") or step.get("subaction") or step.get("action")
                     )
                     if not ext_id or not ext_action:
                         raise ValueError(
@@ -1185,17 +1145,13 @@ class BatchRunner:
                     delta = step.get("delta", 1)
                     res = await self.cdp.go_back(delta=delta)
                     step_res["status"] = "ok"
-                    step_res["detail"] = (
-                        f"Navigated back {delta} step(s): {res.get('url')}"
-                    )
+                    step_res["detail"] = f"Navigated back {delta} step(s): {res.get('url')}"
 
                 elif action == "forward":
                     delta = step.get("delta", 1)
                     res = await self.cdp.go_forward(delta=delta)
                     step_res["status"] = "ok"
-                    step_res["detail"] = (
-                        f"Navigated forward {delta} step(s): {res.get('url')}"
-                    )
+                    step_res["detail"] = f"Navigated forward {delta} step(s): {res.get('url')}"
 
                 elif action == "history":
                     hist = await self.cdp.get_navigation_history()
@@ -1284,9 +1240,7 @@ class BatchRunner:
                 elif action in ("wait_idle", "wait_for_network_idle"):
                     idle_time = step.get("idle_time", 0.5)
                     timeout = step.get("timeout", 10.0)
-                    ok = await self.cdp.wait_for_network_idle(
-                        idle_time=idle_time, timeout=timeout
-                    )
+                    ok = await self.cdp.wait_for_network_idle(idle_time=idle_time, timeout=timeout)
                     step_res["status"] = "ok"
                     step_res["idle"] = ok
 
@@ -1319,9 +1273,7 @@ class BatchRunner:
                     lat = step.get("latitude", 0.0)
                     lon = step.get("longitude", 0.0)
                     acc = step.get("accuracy", 1.0)
-                    res = await self.cdp.set_geolocation(
-                        latitude=lat, longitude=lon, accuracy=acc
-                    )
+                    res = await self.cdp.set_geolocation(latitude=lat, longitude=lon, accuracy=acc)
                     step_res["status"] = "ok"
                     step_res["geolocation"] = res
 
@@ -1334,9 +1286,7 @@ class BatchRunner:
                 elif action == "permissions":
                     perms = step.get("permissions", [])
                     origin = step.get("origin")
-                    res = await self.cdp.grant_permissions(
-                        permissions=perms, origin=origin
-                    )
+                    res = await self.cdp.grant_permissions(permissions=perms, origin=origin)
                     step_res["status"] = "ok"
                     step_res["permissions"] = res
 
@@ -1377,24 +1327,12 @@ class BatchRunner:
                 elif action == "compare_screenshots":
                     from .visual_diff import compare_screenshots
 
-                    img1 = (
-                        step.get("image1")
-                        or step.get("before")
-                        or step.get("screenshot1")
-                    )
-                    img2 = (
-                        step.get("image2")
-                        or step.get("after")
-                        or step.get("screenshot2")
-                    )
+                    img1 = step.get("image1") or step.get("before") or step.get("screenshot1")
+                    img2 = step.get("image2") or step.get("after") or step.get("screenshot2")
                     if not img1 or not img2:
-                        raise ValueError(
-                            "compare_screenshots requires 'image1' and 'image2'"
-                        )
+                        raise ValueError("compare_screenshots requires 'image1' and 'image2'")
                     thresh = step.get("channel_threshold", 16)
-                    diff_path = step.get("diff_output_path") or step.get(
-                        "save_diff_path"
-                    )
+                    diff_path = step.get("diff_output_path") or step.get("save_diff_path")
                     if diff_path:
                         diff_path = self.validate_path(diff_path, for_write=True)
                     res = compare_screenshots(
@@ -1503,9 +1441,7 @@ class BatchRunner:
 
                 elif action == "emulate_environment":
                     if "latitude" in step and "longitude" in step:
-                        await self.cdp.set_geolocation(
-                            step["latitude"], step["longitude"]
-                        )
+                        await self.cdp.set_geolocation(step["latitude"], step["longitude"])
                     if "timezone_id" in step or "timezone" in step:
                         tz_val = step.get("timezone_id") or step.get("timezone", "UTC")
                         await self.cdp.set_timezone(tz_val)

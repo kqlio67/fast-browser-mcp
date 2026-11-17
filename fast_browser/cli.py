@@ -15,15 +15,9 @@ from .snapshot import PageSnapshot
 
 async def run_cli():
     parser = argparse.ArgumentParser(description="Fast Browser CDP CLI")
-    parser.add_argument(
-        "--host", default="127.0.0.1", help="CDP host (default: 127.0.0.1)"
-    )
-    parser.add_argument(
-        "--port", type=int, default=9222, help="CDP port (default: 9222)"
-    )
-    parser.add_argument(
-        "--tab", default=None, help="Target tab filter (URL or title substring)"
-    )
+    parser.add_argument("--host", default="127.0.0.1", help="CDP host (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=9222, help="CDP port (default: 9222)")
+    parser.add_argument("--tab", default=None, help="Target tab filter (URL or title substring)")
     parser.add_argument(
         "--auto-launch",
         action="store_true",
@@ -57,9 +51,7 @@ async def run_cli():
         action="store_true",
         help="Only elements currently visible in viewport",
     )
-    snap_p.add_argument(
-        "--max-elements", type=int, help="Limit maximum interactive elements"
-    )
+    snap_p.add_argument("--max-elements", type=int, help="Limit maximum interactive elements")
 
     # html
     html_p = subparsers.add_parser("html", help="Extract full HTML of page")
@@ -75,9 +67,7 @@ async def run_cli():
     eval_p.add_argument("script", help="JavaScript code to evaluate")
 
     # batch
-    batch_p = subparsers.add_parser(
-        "batch", help="Run a batch of actions from JSON string or file"
-    )
+    batch_p = subparsers.add_parser("batch", help="Run a batch of actions from JSON string or file")
     batch_p.add_argument(
         "steps", help="JSON string or file path containing array of action objects"
     )
@@ -86,9 +76,7 @@ async def run_cli():
     click_p = subparsers.add_parser("click", help="Click an element")
     click_p.add_argument("--ref", help="Element reference (e.g. @1)")
     click_p.add_argument("--selector", help="CSS selector")
-    click_p.add_argument(
-        "--wait-for", help="CSS selector or @ref to wait for after clicking"
-    )
+    click_p.add_argument("--wait-for", help="CSS selector or @ref to wait for after clicking")
 
     # fill
     fill_p = subparsers.add_parser("fill", help="Fill text into input")
@@ -102,9 +90,7 @@ async def run_cli():
     )
 
     # paste
-    paste_p = subparsers.add_parser(
-        "paste", help="Paste text instantly into input via CDP"
-    )
+    paste_p = subparsers.add_parser("paste", help="Paste text instantly into input via CDP")
     paste_p.add_argument("--ref", help="Element reference (e.g. @1)")
     paste_p.add_argument("--selector", help="CSS selector")
     paste_p.add_argument("--text", required=True, help="Text to paste")
@@ -118,17 +104,13 @@ async def run_cli():
 
     # scroll
     scroll_p = subparsers.add_parser("scroll", help="Scroll the page")
-    scroll_p.add_argument(
-        "--delta-y", type=int, default=400, help="Vertical scroll pixels"
-    )
+    scroll_p.add_argument("--delta-y", type=int, default=400, help="Vertical scroll pixels")
     scroll_p.add_argument("--ref", help="Element reference to scroll to")
     scroll_p.add_argument("--selector", help="CSS selector to scroll to")
 
     # mouse
     mouse_p = subparsers.add_parser("mouse", help="Mouse actions")
-    mouse_p.add_argument(
-        "action", choices=["right_click", "double_click", "move", "drag_and_drop"]
-    )
+    mouse_p.add_argument("action", choices=["right_click", "double_click", "move", "drag_and_drop"])
     mouse_p.add_argument("--x", type=float)
     mouse_p.add_argument("--y", type=float)
     mouse_p.add_argument("--from-ref")
@@ -137,9 +119,7 @@ async def run_cli():
     mouse_p.add_argument("--selector")
 
     # console
-    console_p = subparsers.add_parser(
-        "console", help="View captured JavaScript console logs"
-    )
+    console_p = subparsers.add_parser("console", help="View captured JavaScript console logs")
     console_p.add_argument("--type", help="Filter by type (log, error, warning, info)")
     console_p.add_argument("--limit", type=int, default=30, help="Max entries")
 
@@ -147,9 +127,7 @@ async def run_cli():
     subparsers.add_parser("storage", help="Dump localStorage and sessionStorage")
 
     # export-traffic
-    exp_p = subparsers.add_parser(
-        "export-traffic", help="Export traffic dump to JSON file"
-    )
+    exp_p = subparsers.add_parser("export-traffic", help="Export traffic dump to JSON file")
     exp_p.add_argument("output", help="Output JSON file path")
 
     # viewport
@@ -165,9 +143,7 @@ async def run_cli():
 
     # network requests
     net_p = subparsers.add_parser("requests", help="List captured network requests")
-    net_p.add_argument(
-        "--type", help="Filter by type (XHR, Fetch, WebSocket, Document)"
-    )
+    net_p.add_argument("--type", help="Filter by type (XHR, Fetch, WebSocket, Document)")
     net_p.add_argument("--url", help="Filter by URL pattern")
     net_p.add_argument("--limit", type=int, default=30, help="Max requests")
 
@@ -177,9 +153,7 @@ async def run_cli():
 
     # websocket messages
     ws_p = subparsers.add_parser("ws", help="List captured WebSocket frames")
-    ws_p.add_argument(
-        "--direction", choices=["sent", "received"], help="Filter by direction"
-    )
+    ws_p.add_argument("--direction", choices=["sent", "received"], help="Filter by direction")
     ws_p.add_argument("--limit", type=int, default=30, help="Max frames")
 
     # cookies
@@ -200,9 +174,7 @@ async def run_cli():
     # screenshot
     ss_p = subparsers.add_parser("screenshot", help="Capture screenshot")
     ss_p.add_argument("--out", default="screenshot.png", help="Output file path")
-    ss_p.add_argument(
-        "--full-page", action="store_true", help="Capture entire scrollable page"
-    )
+    ss_p.add_argument("--full-page", action="store_true", help="Capture entire scrollable page")
     ss_p.add_argument("--selector", help="Capture specific element")
     ss_p.add_argument(
         "--terminal",
@@ -212,9 +184,7 @@ async def run_cli():
     )
 
     # window
-    win_p = subparsers.add_parser(
-        "window", help="Manage browser window bounds and state"
-    )
+    win_p = subparsers.add_parser("window", help="Manage browser window bounds and state")
     win_p.add_argument(
         "--state",
         choices=["normal", "minimized", "maximized", "fullscreen"],
@@ -239,9 +209,7 @@ async def run_cli():
     subparsers.add_parser("extensions", help="List all installed extensions")
 
     # extension-action
-    ext_act_p = subparsers.add_parser(
-        "extension-action", help="Perform action on an extension"
-    )
+    ext_act_p = subparsers.add_parser("extension-action", help="Perform action on an extension")
     ext_act_p.add_argument("id", help="Extension ID")
     ext_act_p.add_argument(
         "action",
@@ -250,9 +218,7 @@ async def run_cli():
     )
 
     # system-info
-    subparsers.add_parser(
-        "system-info", help="Display browser and CDP protocol version info"
-    )
+    subparsers.add_parser("system-info", help="Display browser and CDP protocol version info")
 
     # download-path
     dl_p = subparsers.add_parser("download-path", help="Set browser download directory")
@@ -265,9 +231,7 @@ async def run_cli():
     )
 
     # permissions
-    perm_p = subparsers.add_parser(
-        "permissions", help="Grant or reset browser permissions"
-    )
+    perm_p = subparsers.add_parser("permissions", help="Grant or reset browser permissions")
     perm_p.add_argument(
         "permissions",
         nargs="*",
@@ -290,9 +254,7 @@ async def run_cli():
 
     # stealth
     stealth_p = subparsers.add_parser("stealth", help="Toggle anti-bot stealth mode")
-    stealth_p.add_argument(
-        "--disable", action="store_true", help="Disable stealth mode"
-    )
+    stealth_p.add_argument("--disable", action="store_true", help="Disable stealth mode")
 
     # validate-env
     subparsers.add_parser(
@@ -309,15 +271,11 @@ async def run_cli():
 
     # theme
     theme_p = subparsers.add_parser("theme", help="Emulate color scheme (dark, light)")
-    theme_p.add_argument(
-        "theme", choices=["dark", "light", "no-preference"], help="Theme choice"
-    )
+    theme_p.add_argument("theme", choices=["dark", "light", "no-preference"], help="Theme choice")
 
     # zoom
     zoom_p = subparsers.add_parser("zoom", help="Adjust page zoom scale")
-    zoom_p.add_argument(
-        "scale", type=float, help="Scale factor (e.g. 0.75, 1.0, 1.25, 1.5)"
-    )
+    zoom_p.add_argument("scale", type=float, help="Scale factor (e.g. 0.75, 1.0, 1.25, 1.5)")
 
     # mute
     mute_p = subparsers.add_parser("mute", help="Mute or unmute tab audio")
@@ -336,23 +294,17 @@ async def run_cli():
 
     # ssl-ignore
     ssl_p = subparsers.add_parser("ssl-ignore", help="Bypass SSL certificate errors")
-    ssl_p.add_argument(
-        "--enforce", action="store_true", help="Do not ignore SSL errors"
-    )
+    ssl_p.add_argument("--enforce", action="store_true", help="Do not ignore SSL errors")
 
     # wait-idle
-    idle_p = subparsers.add_parser(
-        "wait-idle", help="Wait for network requests to become idle"
-    )
+    idle_p = subparsers.add_parser("wait-idle", help="Wait for network requests to become idle")
     idle_p.add_argument(
         "--idle-time",
         type=float,
         default=0.5,
         help="Continuous idle duration in seconds",
     )
-    idle_p.add_argument(
-        "--timeout", type=float, default=10.0, help="Max wait timeout in seconds"
-    )
+    idle_p.add_argument("--timeout", type=float, default=10.0, help="Max wait timeout in seconds")
 
     # block-resources
     block_p = subparsers.add_parser(
@@ -362,20 +314,14 @@ async def run_cli():
     block_p.add_argument("--images", action="store_true", help="Block image files")
     block_p.add_argument("--media", action="store_true", help="Block video and audio")
     block_p.add_argument("--fonts", action="store_true", help="Block web fonts")
-    block_p.add_argument(
-        "--ads", action="store_true", help="Block trackers and analytics"
-    )
+    block_p.add_argument("--ads", action="store_true", help="Block trackers and analytics")
 
     # cleanup-tabs
     clean_p = subparsers.add_parser(
         "cleanup-tabs", help="Close blank or pattern-matching tabs to free memory"
     )
-    clean_p.add_argument(
-        "--close-current", action="store_true", help="Also close current tab"
-    )
-    clean_p.add_argument(
-        "--keep-blank", action="store_true", help="Do not close blank tabs"
-    )
+    clean_p.add_argument("--close-current", action="store_true", help="Also close current tab")
+    clean_p.add_argument("--keep-blank", action="store_true", help="Do not close blank tabs")
     clean_p.add_argument("--patterns", nargs="+", help="URL substrings to close")
 
     # metrics
@@ -389,14 +335,10 @@ async def run_cli():
 
     # timezone
     tz_p = subparsers.add_parser("timezone", help="Override browser timezone")
-    tz_p.add_argument(
-        "timezone", help="Timezone name (e.g. America/New_York, Europe/Kyiv, UTC)"
-    )
+    tz_p.add_argument("timezone", help="Timezone name (e.g. America/New_York, Europe/Kyiv, UTC)")
 
     # cdp-send
-    cdp_p = subparsers.add_parser(
-        "cdp-send", help="Universal raw CDP command invoker (God Mode)"
-    )
+    cdp_p = subparsers.add_parser("cdp-send", help="Universal raw CDP command invoker (God Mode)")
     cdp_p.add_argument(
         "method", help="CDP method name (e.g. DOM.getBoxModel, Memory.getDOMCounters)"
     )
@@ -411,21 +353,15 @@ async def run_cli():
     css_p.add_argument("--ref", help="Element snapshot reference (e.g. @1)")
 
     # isolated-tab
-    iso_p = subparsers.add_parser(
-        "isolated-tab", help="Open new tab in isolated incognito context"
-    )
+    iso_p = subparsers.add_parser("isolated-tab", help="Open new tab in isolated incognito context")
     iso_p.add_argument("--url", default="about:blank", help="URL to open")
 
     # cpu-throttling
     cpu_p = subparsers.add_parser("cpu-throttling", help="Emulate CPU throttling rate")
-    cpu_p.add_argument(
-        "rate", type=float, help="Slowdown rate (1.0 = normal, 2.0 = 2x, 4.0 = 4x)"
-    )
+    cpu_p.add_argument("rate", type=float, help="Slowdown rate (1.0 = normal, 2.0 = 2x, 4.0 = 4x)")
 
     # dialog
-    dlg_p = subparsers.add_parser(
-        "dialog", help="Handle JavaScript alert/confirm/prompt dialog"
-    )
+    dlg_p = subparsers.add_parser("dialog", help="Handle JavaScript alert/confirm/prompt dialog")
     dlg_p.add_argument(
         "--action",
         choices=["accept", "dismiss", "dismiss_overlays"],
@@ -435,9 +371,7 @@ async def run_cli():
     dlg_p.add_argument("--prompt-text", help="Text to fill in window.prompt")
 
     # launch
-    launch_p = subparsers.add_parser(
-        "launch", help="Launch a local browser instance with CDP"
-    )
+    launch_p = subparsers.add_parser("launch", help="Launch a local browser instance with CDP")
     launch_p.add_argument(
         "--headless",
         action="store_true",
@@ -457,9 +391,7 @@ async def run_cli():
     )
 
     # wait-download
-    dl_p = subparsers.add_parser(
-        "wait-download", help="Wait for a file download to complete"
-    )
+    dl_p = subparsers.add_parser("wait-download", help="Wait for a file download to complete")
     dl_p.add_argument("directory", help="Download directory to monitor")
     dl_p.add_argument("--pattern", help="Filename substring pattern")
     dl_p.add_argument(
@@ -523,9 +455,7 @@ async def run_cli():
         return
 
     elif args.command == "window":
-        if args.state or any(
-            v is not None for v in [args.width, args.height, args.left, args.top]
-        ):
+        if args.state or any(v is not None for v in [args.width, args.height, args.left, args.top]):
             await cdp.set_window_bounds(
                 state=args.state,
                 width=args.width,
@@ -534,9 +464,7 @@ async def run_cli():
                 top=args.top,
             )
             bounds = await cdp.get_window_bounds()
-            print(
-                f"Window bounds updated: {json.dumps(bounds.get('bounds'), ensure_ascii=False)}"
-            )
+            print(f"Window bounds updated: {json.dumps(bounds.get('bounds'), ensure_ascii=False)}")
         else:
             bounds = await cdp.get_window_bounds()
             print(json.dumps(bounds, ensure_ascii=False, indent=2))
@@ -755,9 +683,7 @@ async def run_cli():
         print(json.dumps(cookies, ensure_ascii=False, indent=2))
 
     elif args.command == "set-cookie":
-        res = await cdp.set_cookie(
-            args.name, args.value, domain=args.domain, path=args.path
-        )
+        res = await cdp.set_cookie(args.name, args.value, domain=args.domain, path=args.path)
         print("Cookie set successfully" if res else "Failed to set cookie")
 
     elif args.command == "clear":
@@ -842,9 +768,7 @@ async def run_cli():
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     elif args.command == "wait-idle":
-        ok = await cdp.wait_for_network_idle(
-            idle_time=args.idle_time, timeout=args.timeout
-        )
+        ok = await cdp.wait_for_network_idle(idle_time=args.idle_time, timeout=args.timeout)
         print(f"Network idle: {ok}")
 
     elif args.command == "block-resources":
@@ -881,9 +805,7 @@ async def run_cli():
 
     elif args.command == "cdp-send":
         params = json.loads(args.params) if args.params else None
-        res = await cdp.send_cdp(
-            method=args.method, params=params, timeout=args.timeout
-        )
+        res = await cdp.send_cdp(method=args.method, params=params, timeout=args.timeout)
         print(json.dumps(res, ensure_ascii=False, indent=2))
 
     elif args.command == "css-styles":

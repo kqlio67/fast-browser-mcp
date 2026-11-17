@@ -827,9 +827,7 @@ TOOLS = [
         "description": "Navigate active tab to a URL.",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "URL to navigate to"}
-            },
+            "properties": {"url": {"type": "string", "description": "URL to navigate to"}},
             "required": ["url"],
         },
     },
@@ -1277,9 +1275,7 @@ TOOLS = [
         "description": "Override browser timezone (e.g. 'America/New_York', 'Europe/Kyiv', 'UTC').",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "timezone": {"type": "string", "description": "Timezone identifier"}
-            },
+            "properties": {"timezone": {"type": "string", "description": "Timezone identifier"}},
             "required": ["timezone"],
         },
     },
@@ -2064,9 +2060,7 @@ async def _handle_get_html(server: "MCPServer", args: dict[str, Any]) -> str:
 
 @tool("browser_get_css_styles")
 async def _handle_get_css_styles(server: "MCPServer", args: dict[str, Any]) -> str:
-    res = await server.cdp.get_css_styles(
-        selector=args.get("selector"), ref=args.get("ref")
-    )
+    res = await server.cdp.get_css_styles(selector=args.get("selector"), ref=args.get("ref"))
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 
@@ -2261,9 +2255,7 @@ async def _handle_set_viewport(server: "MCPServer", args: dict[str, Any]) -> str
     h = args.get("height", 800)
     mob = args.get("mobile", False)
     scale = args.get("device_scale_factor", 1.0)
-    await server.cdp.set_viewport(
-        width=w, height=h, mobile=mob, device_scale_factor=scale
-    )
+    await server.cdp.set_viewport(width=w, height=h, mobile=mob, device_scale_factor=scale)
     return f"Viewport set to {w}x{h} (mobile={mob})"
 
 
@@ -2330,9 +2322,7 @@ async def _handle_network_requests(server: "MCPServer", args: dict[str, Any]) ->
 
 
 @tool("browser_network_get_response")
-async def _handle_network_get_response(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_network_get_response(server: "MCPServer", args: dict[str, Any]) -> str:
     req_id = args.get("request_id", "")
     details = server.cdp.network.get_request_details(req_id)
     body_res = await server.cdp.get_response_body(req_id)
@@ -2362,22 +2352,16 @@ async def _handle_export_traffic(server: "MCPServer", args: dict[str, Any]) -> s
     safe_path = server.validate_path(path, for_write=True)
     fmt = args.get("format", "json")
     redact = args.get("redact_sensitive_headers", True)
-    await server.cdp.network.export_to_file(
-        safe_path, format=fmt, redact_sensitive_headers=redact
-    )
+    await server.cdp.network.export_to_file(safe_path, format=fmt, redact_sensitive_headers=redact)
     return f"Traffic dump exported successfully to {safe_path} (format={fmt}, redact={redact})"
 
 
 @tool("browser_wait_for_network_idle")
-async def _handle_wait_for_network_idle(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_wait_for_network_idle(server: "MCPServer", args: dict[str, Any]) -> str:
     idle_time = args.get("idle_time", 0.5)
     timeout = args.get("timeout", 10.0)
     ok = await server.cdp.wait_for_network_idle(idle_time=idle_time, timeout=timeout)
-    return json.dumps(
-        {"idle": ok, "idle_time": idle_time, "timeout": timeout}, indent=2
-    )
+    return json.dumps({"idle": ok, "idle_time": idle_time, "timeout": timeout}, indent=2)
 
 
 @tool("browser_block_urls")
@@ -2427,9 +2411,7 @@ async def _handle_network_throttling(server: "MCPServer", args: dict[str, Any]) 
 
 
 @tool("browser_set_ignore_certificate_errors")
-async def _handle_set_ignore_certificate_errors(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_set_ignore_certificate_errors(server: "MCPServer", args: dict[str, Any]) -> str:
     ignore = args.get("ignore", True)
     res = await server.cdp.set_ignore_certificate_errors(ignore=ignore)
     return json.dumps(res, ensure_ascii=False, indent=2)
@@ -2551,9 +2533,7 @@ async def _handle_add_preload_script(server: "MCPServer", args: dict[str, Any]) 
 
 
 @tool("browser_remove_preload_script")
-async def _handle_remove_preload_script(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_remove_preload_script(server: "MCPServer", args: dict[str, Any]) -> str:
     ident = args.get("identifier", "")
     await server.cdp.remove_preload_script(ident)
     return f"Preload script removed (identifier={ident})"
@@ -2786,9 +2766,7 @@ async def _handle_fill_form(server: "MCPServer", args: dict[str, Any]) -> str:
 
 
 @tool("browser_get_event_listeners")
-async def _handle_get_event_listeners(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_get_event_listeners(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.get_event_listeners(
         selector=args.get("selector"),
         ref=args.get("ref"),
@@ -2800,9 +2778,7 @@ async def _handle_get_event_listeners(
 
 
 @tool("browser_compare_screenshots", requires_connection=False)
-async def _handle_compare_screenshots(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_compare_screenshots(server: "MCPServer", args: dict[str, Any]) -> str:
     from .visual_diff import compare_screenshots
 
     img1 = args.get("image1") or args.get("before") or args.get("screenshot1")
@@ -2815,16 +2791,12 @@ async def _handle_compare_screenshots(
     if diff_path:
         diff_path = server.validate_path(diff_path, for_write=True)
 
-    res = compare_screenshots(
-        img1, img2, channel_threshold=thresh, diff_output_path=diff_path
-    )
+    res = compare_screenshots(img1, img2, channel_threshold=thresh, diff_output_path=diff_path)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 
 @tool("browser_observe_coverage")
-async def _handle_observe_coverage(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_observe_coverage(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.observe_coverage(
         duration_ms=args.get("duration_ms", 500),
         detailed=args.get("detailed", True),
@@ -2836,9 +2808,7 @@ async def _handle_observe_coverage(
 
 
 @tool("browser_start_coverage")
-async def _handle_start_coverage(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_start_coverage(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.start_coverage(
         detailed=args.get("detailed", True),
         call_count=args.get("call_count", True),
@@ -2847,9 +2817,7 @@ async def _handle_start_coverage(
 
 
 @tool("browser_stop_coverage")
-async def _handle_stop_coverage(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_stop_coverage(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.stop_coverage(
         url_filter=args.get("url_filter"),
         only_executed=args.get("only_executed", True),
@@ -2858,9 +2826,7 @@ async def _handle_stop_coverage(
 
 
 @tool("browser_get_cache_storage")
-async def _handle_get_cache_storage(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_get_cache_storage(server: "MCPServer", args: dict[str, Any]) -> str:
     res = await server.cdp.get_cache_storage(
         cache_name=args.get("cache_name"),
         limit=args.get("limit", 50),
@@ -2878,9 +2844,7 @@ async def _handle_route_intercept(server: "MCPServer", args: dict[str, Any]) -> 
 
 
 @tool("browser_discover_endpoints")
-async def _handle_discover_endpoints(
-    server: "MCPServer", args: dict[str, Any]
-) -> str:
+async def _handle_discover_endpoints(server: "MCPServer", args: dict[str, Any]) -> str:
     step = {"action": "discover_endpoints"}
     res = await server.batch.execute([step])
     return json.dumps(res, ensure_ascii=False)
@@ -3012,17 +2976,14 @@ class MCPServer:
         self.port = port
         self.allowed_dir = allowed_dir or os.environ.get("FAST_BROWSER_ALLOWED_DIR")
         self.auto_launch = auto_launch or (
-            os.environ.get("FAST_BROWSER_AUTO_LAUNCH", "").lower()
-            in ("1", "true", "yes")
+            os.environ.get("FAST_BROWSER_AUTO_LAUNCH", "").lower() in ("1", "true", "yes")
         )
         self.cdp = CDPClient(host=host, port=port)
         self.snapshot = PageSnapshot(self.cdp)
         self.batch = BatchRunner(self.cdp, allowed_dir=self.allowed_dir)
         self._client_used_headers: bool = False
 
-    def validate_path(
-        self, path: str, must_exist: bool = False, for_write: bool = False
-    ) -> str:
+    def validate_path(self, path: str, must_exist: bool = False, for_write: bool = False) -> str:
         """Validate and resolve file path according to sandboxing rules."""
         if not path or not isinstance(path, str):
             raise ValueError("Invalid file path: path must be a non-empty string")
@@ -3077,9 +3038,7 @@ class MCPServer:
             err_obj["data"] = data
         self._send_response({"jsonrpc": "2.0", "id": msg_id, "error": err_obj})
 
-    async def _read_message(
-        self, reader: asyncio.StreamReader
-    ) -> dict[str, Any] | None:
+    async def _read_message(self, reader: asyncio.StreamReader) -> dict[str, Any] | None:
         """Read a single JSON-RPC message from reader, supporting both NDJSON and Content-Length headers."""
         while True:
             line = await reader.readline()
@@ -3401,8 +3360,7 @@ def main():
     parser.add_argument(
         "--auto-launch",
         action="store_true",
-        default=os.environ.get("FAST_BROWSER_AUTO_LAUNCH", "").lower()
-        in ("1", "true", "yes"),
+        default=os.environ.get("FAST_BROWSER_AUTO_LAUNCH", "").lower() in ("1", "true", "yes"),
         help="Automatically launch browser if CDP port is not reachable",
     )
     args = parser.parse_args()

@@ -89,9 +89,7 @@ async def apply_adblock(
             block_trackers=block_trackers, custom_patterns=custom_patterns
         )
         await cdp_client.send("Network.enable")
-        await cdp_client.send(
-            "Network.setBlockedURLs", {"urls": patterns}
-        )
+        await cdp_client.send("Network.setBlockedURLs", {"urls": patterns})
         return {
             "status": "ok",
             "adblock_enabled": True,

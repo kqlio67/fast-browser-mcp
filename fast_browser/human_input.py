@@ -105,17 +105,11 @@ def generate_human_trajectory(
             by += random.gauss(0, noise_scale)
 
         # Variable micro-delay (faster in middle, slower near target)
-        delay = (
-            random.uniform(5.0, 14.0)
-            if raw_t < 0.8
-            else random.uniform(12.0, 25.0)
-        )
+        delay = random.uniform(5.0, 14.0) if raw_t < 0.8 else random.uniform(12.0, 25.0)
         points.append(TrajectoryPoint(round(bx, 1), round(by, 1), delay))
 
     # Ensure last point lands exactly on target
     if points:
-        points[-1] = TrajectoryPoint(
-            round(end_x, 1), round(end_y, 1), random.uniform(20.0, 40.0)
-        )
+        points[-1] = TrajectoryPoint(round(end_x, 1), round(end_y, 1), random.uniform(20.0, 40.0))
 
     return points

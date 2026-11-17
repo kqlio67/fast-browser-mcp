@@ -307,17 +307,9 @@ class PageSnapshot:
             if node.get("ignored", False):
                 continue
             role_obj = node.get("role", {})
-            role = (
-                role_obj.get("value", "")
-                if isinstance(role_obj, dict)
-                else str(role_obj)
-            )
+            role = role_obj.get("value", "") if isinstance(role_obj, dict) else str(role_obj)
             name_obj = node.get("name", {})
-            name = (
-                name_obj.get("value", "")
-                if isinstance(name_obj, dict)
-                else str(name_obj)
-            )
+            name = name_obj.get("value", "") if isinstance(name_obj, dict) else str(name_obj)
             name = (name or "").strip()
 
             if role == "heading" or "heading" in role:
@@ -349,9 +341,7 @@ class PageSnapshot:
         title = ""
         url = ""
         try:
-            target = await self.cdp.get_target_by_id_async(
-                self.cdp.target_id or ""
-            )
+            target = await self.cdp.get_target_by_id_async(self.cdp.target_id or "")
             if target:
                 title = target.get("title", "")
                 url = target.get("url", "")
@@ -469,9 +459,7 @@ class PageSnapshot:
                     default_frame_prefix=frame_prefix,
                 )
                 try:
-                    child_data = await self.cdp.evaluate(
-                        child_js, session_id=session_id
-                    )
+                    child_data = await self.cdp.evaluate(child_js, session_id=session_id)
                     if child_data and isinstance(child_data, dict):
                         for rid in child_data.get("ref_ids", []):
                             self.cdp.ref_session_map[rid] = session_id
@@ -479,22 +467,16 @@ class PageSnapshot:
                         data["interactive"].extend(child_interactive)
                         for h in child_data.get("headings", []):
                             data["headings"].append(f"({frame_name}) {h}")
-                        data["total_count"] = data.get(
-                            "total_count", 0
-                        ) + child_data.get("total_count", len(child_interactive))
+                        data["total_count"] = data.get("total_count", 0) + child_data.get(
+                            "total_count", len(child_interactive)
+                        )
                         if child_data.get("truncated"):
                             data["truncated"] = True
-                        next_id = child_data.get(
-                            "next_id", next_id + len(child_interactive)
-                        )
+                        next_id = child_data.get("next_id", next_id + len(child_interactive))
                 except Exception as e:
                     logger.debug(e)
 
-        if (
-            max_elements
-            and max_elements > 0
-            and len(data["interactive"]) > max_elements
-        ):
+        if max_elements and max_elements > 0 and len(data["interactive"]) > max_elements:
             data["interactive"] = data["interactive"][:max_elements]
             data["truncated"] = True
         data["count"] = len(data["interactive"])
@@ -514,9 +496,7 @@ class PageSnapshot:
             max_elements=max_elements,
             passive=passive,
         )
-        scope_info = (
-            f" [Scope: {data.get('root')}]" if data.get("root") != "document" else ""
-        )
+        scope_info = f" [Scope: {data.get('root')}]" if data.get("root") != "document" else ""
         vp_info = " [Viewport only]" if data.get("in_viewport") else ""
         lines = [
             f"=== Page: {data.get('title')}{scope_info}{vp_info} ===",
@@ -560,11 +540,7 @@ class PageSnapshot:
                 state = await self.cdp.get_page_state()
                 curr_seq = state.get("seq")
                 last_seq = getattr(self, "_last_diff_seq", None)
-                if (
-                    curr_seq is not None
-                    and last_seq is not None
-                    and curr_seq == last_seq
-                ):
+                if curr_seq is not None and last_seq is not None and curr_seq == last_seq:
                     return {
                         "changed": False,
                         "url_changed": False,
@@ -596,14 +572,10 @@ class PageSnapshot:
 def diff_snapshots(prev_text: str, curr_text: str) -> dict[str, Any]:
     """Calculate structural delta between two formatted snapshot outputs."""
     prev_lines = [
-        line.strip()
-        for line in prev_text.splitlines()
-        if line.strip().startswith("@ref:")
+        line.strip() for line in prev_text.splitlines() if line.strip().startswith("@ref:")
     ]
     curr_lines = [
-        line.strip()
-        for line in curr_text.splitlines()
-        if line.strip().startswith("@ref:")
+        line.strip() for line in curr_text.splitlines() if line.strip().startswith("@ref:")
     ]
 
     def normalize_ref(line: str) -> str:

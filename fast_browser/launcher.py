@@ -139,9 +139,7 @@ def get_profiles_dir() -> str:
 
 def get_profile_dir(profile_name: str) -> str:
     """Get absolute path to a named persistent profile."""
-    safe_name = "".join(
-        c for c in profile_name if c.isalnum() or c in ("-", "_")
-    ).strip()
+    safe_name = "".join(c for c in profile_name if c.isalnum() or c in ("-", "_")).strip()
     if not safe_name:
         safe_name = "default"
     path = os.path.join(get_profiles_dir(), safe_name)
@@ -155,9 +153,7 @@ def list_profiles() -> list[str]:
     if not os.path.isdir(base):
         return []
     try:
-        return sorted(
-            [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
-        )
+        return sorted([d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))])
     except (OSError, PermissionError):
         return []
 
@@ -376,9 +372,7 @@ def launch_browser(
     return bp
 
 
-def detect_backend(
-    host: str = "127.0.0.1", port: int = 9222, timeout: float = 1.0
-) -> str:
+def detect_backend(host: str = "127.0.0.1", port: int = 9222, timeout: float = 1.0) -> str:
     """Detect whether connected CDP server is Chromium, Kitesurf, or another backend."""
     try:
         resp = requests.get(f"http://{host}:{port}/json/version", timeout=timeout)

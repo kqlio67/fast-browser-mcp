@@ -61,9 +61,7 @@ def redact_headers(headers: Any) -> Any:
                 out.append(
                     {
                         "name": h["name"],
-                        "value": redact_header_value(
-                            h["name"], h.get("value", "")
-                        ),
+                        "value": redact_header_value(h["name"], h.get("value", "")),
                     }
                 )
             else:
@@ -195,9 +193,7 @@ class ConsoleMonitor:
                 }
             )
 
-    def list_logs(
-        self, log_type: str | None = None, limit: int = 50
-    ) -> list[dict[str, Any]]:
+    def list_logs(self, log_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         results = []
         for log in reversed(self.logs):
             if log_type and log_type.lower() != "all":
@@ -233,9 +229,7 @@ class NetworkMonitor:
         self.in_flight_requests = InFlightTracker()
         self.last_activity_time: float = time.time()
 
-    def is_network_idle(
-        self, idle_time: float = 0.5, timeout_ttl: float = 20.0
-    ) -> bool:
+    def is_network_idle(self, idle_time: float = 0.5, timeout_ttl: float = 20.0) -> bool:
         now = time.time()
         if self.in_flight_requests:
             expired = [
@@ -245,10 +239,7 @@ class NetworkMonitor:
             ]
             for rid in expired:
                 self.in_flight_requests.discard(rid)
-        return (
-            len(self.in_flight_requests) == 0
-            and (now - self.last_activity_time) >= idle_time
-        )
+        return len(self.in_flight_requests) == 0 and (now - self.last_activity_time) >= idle_time
 
     def handle_event(self, method: str, params: dict[str, Any]):
         t = time.strftime("%H:%M:%S")
@@ -320,9 +311,7 @@ class NetworkMonitor:
                 if req_id in self.requests:
                     self.requests[req_id]["endTime"] = now_ts
                     if "encodedDataLength" in params:
-                        self.requests[req_id]["encodedDataLength"] = params[
-                            "encodedDataLength"
-                        ]
+                        self.requests[req_id]["encodedDataLength"] = params["encodedDataLength"]
 
         elif method == "Network.webSocketCreated":
             req_id = str(params.get("requestId", ""))
@@ -397,17 +386,11 @@ class NetworkMonitor:
             if filter_type and filter_type.lower() != "all":
                 if req.get("type", "").lower() != filter_type.lower():
                     continue
-            if url_pattern and url_pattern.lower() not in (
-                req.get("url") or ""
-            ).lower():
+            if url_pattern and url_pattern.lower() not in (req.get("url") or "").lower():
                 continue
 
             raw_url = req.get("url") or ""
-            url = (
-                redact_url_params(raw_url)
-                if redact_sensitive_headers
-                else raw_url
-            )
+            url = redact_url_params(raw_url) if redact_sensitive_headers else raw_url
             results.append(
                 {
                     "id": req["id"],
@@ -435,15 +418,11 @@ class NetworkMonitor:
         copied = dict(req)
         copied["url"] = redact_url_params(copied.get("url"))
         copied["headers"] = redact_headers(copied.get("headers", {}))
-        copied["responseHeaders"] = redact_headers(
-            copied.get("responseHeaders", {})
-        )
+        copied["responseHeaders"] = redact_headers(copied.get("responseHeaders", {}))
         copied["postData"] = redact_post_data(copied.get("postData"))
         return copied
 
-    def list_ws_frames(
-        self, direction: str | None = None, limit: int = 50
-    ) -> list[dict[str, Any]]:
+    def list_ws_frames(self, direction: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         results = []
         for frame in reversed(self.ws_frames):
             if direction and frame.get("direction") != direction:
@@ -453,9 +432,7 @@ class NetworkMonitor:
                 break
         return results
 
-    def export_to_dict(
-        self, redact_sensitive_headers: bool = False
-    ) -> dict[str, Any]:
+    def export_to_dict(self, redact_sensitive_headers: bool = False) -> dict[str, Any]:
         reqs = list(self.requests.values())
         if redact_sensitive_headers:
             cleaned_reqs = []
@@ -463,9 +440,7 @@ class NetworkMonitor:
                 cr = dict(r)
                 cr["url"] = redact_url_params(cr.get("url"))
                 cr["headers"] = redact_headers(cr.get("headers", {}))
-                cr["responseHeaders"] = redact_headers(
-                    cr.get("responseHeaders", {})
-                )
+                cr["responseHeaders"] = redact_headers(cr.get("responseHeaders", {}))
                 cr["postData"] = redact_post_data(cr.get("postData"))
                 cleaned_reqs.append(cr)
             reqs = cleaned_reqs
@@ -478,17 +453,13 @@ class NetworkMonitor:
             "websocket_frames": list(self.ws_frames),
         }
 
-    def export_to_har(
-        self, redact_sensitive_headers: bool = True
-    ) -> dict[str, Any]:
+    def export_to_har(self, redact_sensitive_headers: bool = True) -> dict[str, Any]:
         """Export captured requests into standards-compliant HAR 1.2 format."""
         har_entries: list[dict[str, Any]] = []
 
         for req in self.requests.values():
             wall_time = req.get("wallTime") or time.time()
-            dt = datetime.datetime.fromtimestamp(
-                wall_time, tz=datetime.timezone.utc
-            )
+            dt = datetime.datetime.fromtimestamp(wall_time, tz=datetime.timezone.utc)
             started_date_time = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
             start_t = req.get("startTime") or wall_time
@@ -496,22 +467,14 @@ class NetworkMonitor:
             elapsed_ms = max(0.0, round((end_t - start_t) * 1000, 2))
 
             raw_url = req.get("url") or ""
-            target_url = (
-                redact_url_params(raw_url)
-                if redact_sensitive_headers
-                else raw_url
-            )
+            target_url = redact_url_params(raw_url) if redact_sensitive_headers else raw_url
 
             # Format request headers
             req_headers_raw = req.get("headers", {})
             req_headers = []
             req_cookies = []
             for k, v in req_headers_raw.items():
-                val = (
-                    redact_header_value(k, v)
-                    if redact_sensitive_headers
-                    else str(v)
-                )
+                val = redact_header_value(k, v) if redact_sensitive_headers else str(v)
                 req_headers.append({"name": k, "value": val})
                 if k.lower() == "cookie":
                     # Parse cookies
@@ -531,9 +494,7 @@ class NetworkMonitor:
             query_params = []
             try:
                 parsed = urllib.parse.urlsplit(raw_url)
-                for qk, qv in urllib.parse.parse_qsl(
-                    parsed.query, keep_blank_values=True
-                ):
+                for qk, qv in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True):
                     qval = (
                         "[REDACTED]"
                         if (
@@ -551,13 +512,11 @@ class NetworkMonitor:
             raw_post_data = req.get("postData")
             if raw_post_data:
                 p_text = (
-                    redact_post_data(raw_post_data)
-                    if redact_sensitive_headers
-                    else raw_post_data
+                    redact_post_data(raw_post_data) if redact_sensitive_headers else raw_post_data
                 )
-                content_type = req_headers_raw.get(
-                    "Content-Type"
-                ) or req_headers_raw.get("content-type")
+                content_type = req_headers_raw.get("Content-Type") or req_headers_raw.get(
+                    "content-type"
+                )
                 post_data_obj = {
                     "mimeType": content_type or "application/octet-stream",
                     "text": p_text,
@@ -568,11 +527,7 @@ class NetworkMonitor:
             resp_headers = []
             resp_cookies = []
             for k, v in resp_headers_raw.items():
-                val = (
-                    redact_header_value(k, v)
-                    if redact_sensitive_headers
-                    else str(v)
-                )
+                val = redact_header_value(k, v) if redact_sensitive_headers else str(v)
                 resp_headers.append({"name": k, "value": val})
                 if k.lower() == "set-cookie":
                     if "=" in str(v):
@@ -580,16 +535,12 @@ class NetworkMonitor:
                         resp_cookies.append(
                             {
                                 "name": c_name,
-                                "value": "[REDACTED]"
-                                if redact_sensitive_headers
-                                else str(v),
+                                "value": "[REDACTED]" if redact_sensitive_headers else str(v),
                             }
                         )
 
             resp_status = req.get("status") or 0
-            resp_status_text = req.get("statusText") or (
-                "OK" if resp_status == 200 else ""
-            )
+            resp_status_text = req.get("statusText") or ("OK" if resp_status == 200 else "")
             resp_body_text = req.get("responseBody", "")
             resp_content_size = req.get("encodedDataLength") or len(
                 resp_body_text.encode("utf-8", errors="replace")
@@ -607,9 +558,7 @@ class NetworkMonitor:
                     "queryString": query_params,
                     "postData": post_data_obj,
                     "headersSize": -1,
-                    "bodySize": len(
-                        raw_post_data.encode("utf-8", errors="replace")
-                    )
+                    "bodySize": len(raw_post_data.encode("utf-8", errors="replace"))
                     if raw_post_data
                     else 0,
                 },
@@ -621,8 +570,7 @@ class NetworkMonitor:
                     "headers": resp_headers,
                     "content": {
                         "size": resp_content_size,
-                        "mimeType": req.get("mimeType")
-                        or "application/octet-stream",
+                        "mimeType": req.get("mimeType") or "application/octet-stream",
                         "text": resp_body_text if resp_body_text else None,
                     },
                     "redirectURL": req.get("redirected_from") or "",
@@ -661,13 +609,9 @@ class NetworkMonitor:
     ):
         is_har = format.lower() == "har" or file_path.lower().endswith(".har")
         if is_har:
-            data = self.export_to_har(
-                redact_sensitive_headers=redact_sensitive_headers
-            )
+            data = self.export_to_har(redact_sensitive_headers=redact_sensitive_headers)
         else:
-            data = self.export_to_dict(
-                redact_sensitive_headers=redact_sensitive_headers
-            )
+            data = self.export_to_dict(redact_sensitive_headers=redact_sensitive_headers)
 
         async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             await f.write(json.dumps(data, ensure_ascii=False, indent=2))
