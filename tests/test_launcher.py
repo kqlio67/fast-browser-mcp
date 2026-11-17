@@ -25,6 +25,7 @@ class TestLauncher(unittest.TestCase):
         self.assertIn("test_user_profile", profiles)
         # Cleanup
         shutil.rmtree(get_profiles_dir(), ignore_errors=True)
+
     def test_find_browser_executable(self):
         # Should return a valid string or None without throwing
         browser_bin = find_browser_executable()

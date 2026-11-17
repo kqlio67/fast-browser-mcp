@@ -60,9 +60,7 @@ class TestBrowserManager:
         if sandbox_must_be_disabled():
             cmd.append("--no-sandbox")
 
-        cls._proc = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        cls._proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         url = f"http://127.0.0.1:{cls._port}/json/version"
         ready = False

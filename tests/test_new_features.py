@@ -88,7 +88,9 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         self.cdp.human_click = AsyncMock()
         self.cdp.human_move = AsyncMock()
         self.cdp.set_adblock = AsyncMock(return_value={"enabled": True, "rules_count": 80})
-        self.cdp.smart_find = AsyncMock(return_value=[{"ref": "@e1", "role": "button", "score": 90}])
+        self.cdp.smart_find = AsyncMock(
+            return_value=[{"ref": "@e1", "role": "button", "score": 90}]
+        )
         self.cdp.create_browser_context = AsyncMock(return_value="ctx-999")
         self.cdp.dispose_browser_context = AsyncMock()
         self.cdp.list_browser_contexts = AsyncMock(return_value=["ctx-999"])
@@ -109,7 +111,9 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         step = {"action": "set_adblock", "enabled": True, "block_trackers": True}
         res = await self.batch.execute([step])
         self.assertTrue(res["success"])
-        self.cdp.set_adblock.assert_awaited_once_with(enabled=True, block_trackers=True, custom_patterns=None)
+        self.cdp.set_adblock.assert_awaited_once_with(
+            enabled=True, block_trackers=True, custom_patterns=None
+        )
 
     async def test_smart_find_action(self):
         step = {"action": "smart_find", "intent": "sign in", "role": "button", "max_results": 3}
@@ -129,15 +133,21 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res_list["results"][0]["browser_contexts"], ["ctx-999"])
 
         # dispose
-        res_dispose = await self.batch.execute([{"action": "dispose_context", "browser_context_id": "ctx-999"}])
+        res_dispose = await self.batch.execute(
+            [{"action": "dispose_context", "browser_context_id": "ctx-999"}]
+        )
         self.assertTrue(res_dispose["success"])
         self.cdp.dispose_browser_context.assert_awaited_once_with("ctx-999")
 
     async def test_universal_new_actions(self):
-        self.cdp.get_page_state = AsyncMock(return_value={"seq": 10, "url": "https://example.com", "backend": "chrome"})
+        self.cdp.get_page_state = AsyncMock(
+            return_value={"seq": 10, "url": "https://example.com", "backend": "chrome"}
+        )
         self.cdp.set_control_value = AsyncMock(return_value={"status": "ok", "value": "test-val"})
         self.cdp.mark_paint_damage = AsyncMock(return_value={"status": "ok"})
-        self.cdp.get_paint_damage_since = AsyncMock(return_value={"status": "ok", "damaged_count": 1})
+        self.cdp.get_paint_damage_since = AsyncMock(
+            return_value={"status": "ok", "damaged_count": 1}
+        )
         self.cdp.set_turbo_mode = AsyncMock(return_value={"status": "ok", "turbo": True})
 
         # page_state
@@ -146,9 +156,13 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res1["results"][0]["page_state"]["seq"], 10)
 
         # set_control_value
-        res2 = await self.batch.execute([{"action": "set_control_value", "value": "test-val", "selector": "#input"}])
+        res2 = await self.batch.execute(
+            [{"action": "set_control_value", "value": "test-val", "selector": "#input"}]
+        )
         self.assertTrue(res2["success"])
-        self.cdp.set_control_value.assert_awaited_once_with(value="test-val", ref=None, selector="#input", node_id=None)
+        self.cdp.set_control_value.assert_awaited_once_with(
+            value="test-val", ref=None, selector="#input", node_id=None
+        )
 
         # paint_damage mark & get
         res3 = await self.batch.execute([{"action": "mark_paint_damage"}])
@@ -157,7 +171,9 @@ class TestBatchRunnerNewActions(unittest.IsolatedAsyncioTestCase):
 
         res4 = await self.batch.execute([{"action": "get_paint_damage"}])
         self.assertTrue(res4["success"])
-        self.cdp.get_paint_damage_since.assert_awaited_once_with(exclude_ref=None, exclude_selector=None)
+        self.cdp.get_paint_damage_since.assert_awaited_once_with(
+            exclude_ref=None, exclude_selector=None
+        )
 
         # turbo_mode
         res5 = await self.batch.execute([{"action": "turbo_mode", "enabled": True}])
@@ -185,14 +201,31 @@ class TestUniversalCdpMethods(unittest.IsolatedAsyncioTestCase):
 
         # 1. Kitesurf backend
         client._backend = "kitesurf"
-        client.send = AsyncMock(return_value={"seq": 42, "scrollX": 0, "scrollY": 150, "href": "https://kitesurf.dev", "title": "Kitesurf"})
+        client.send = AsyncMock(
+            return_value={
+                "seq": 42,
+                "scrollX": 0,
+                "scrollY": 150,
+                "href": "https://kitesurf.dev",
+                "title": "Kitesurf",
+            }
+        )
         state_k = await client.get_page_state()
         self.assertEqual(state_k["seq"], 42)
         self.assertEqual(state_k["backend"], "kitesurf")
 
         # 2. Chrome backend fallback
         client._backend = "chrome"
-        client.evaluate = AsyncMock(return_value={"seq": 7, "scroll_x": 0, "scroll_y": 50, "url": "https://google.com", "title": "Google", "backend": "chrome"})
+        client.evaluate = AsyncMock(
+            return_value={
+                "seq": 7,
+                "scroll_x": 0,
+                "scroll_y": 50,
+                "url": "https://google.com",
+                "title": "Google",
+                "backend": "chrome",
+            }
+        )
         state_c = await client.get_page_state()
         self.assertEqual(state_c["seq"], 7)
         self.assertEqual(state_c["backend"], "chrome")

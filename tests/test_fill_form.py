@@ -11,9 +11,7 @@ class TestBrowserFillForm(unittest.IsolatedAsyncioTestCase):
         server.cdp = MagicMock()
         server.cdp.is_connected = True
         server.batch = MagicMock()
-        server.batch.execute = AsyncMock(
-            return_value={"status": "batch_completed", "results": []}
-        )
+        server.batch.execute = AsyncMock(return_value={"status": "batch_completed", "results": []})
 
         res_str = await server.handle_call(
             "browser_fill_form",

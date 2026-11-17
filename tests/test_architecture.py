@@ -137,9 +137,7 @@ class TestArchitecture(BaseBrowserTest):
             self.assertIn("Blocked 2 URL patterns", res1["results"][0]["detail"])
 
             # 2. Test block_urls also accepts 'urls'
-            res2 = await runner.execute(
-                [{"action": "block_urls", "urls": ["*.ads.com"]}]
-            )
+            res2 = await runner.execute([{"action": "block_urls", "urls": ["*.ads.com"]}])
             self.assertTrue(res2["success"], res2.get("error"))
             self.assertIn("Blocked 1 URL patterns", res2["results"][0]["detail"])
 
@@ -225,9 +223,7 @@ class TestArchitecture(BaseBrowserTest):
         self.assertEqual(len(monitor.ordered_requests), 1)
         self.assertIn("req_red", monitor.requests)
         self.assertEqual(monitor.requests["req_red"]["url"], "https://example.com")
-        self.assertEqual(
-            monitor.requests["req_red"]["redirected_from"], "http://example.com"
-        )
+        self.assertEqual(monitor.requests["req_red"]["redirected_from"], "http://example.com")
 
     def test_cdp_connect_lock_and_compounding_timeouts(self):
         client = CDPClient(port=self.test_port)
@@ -240,9 +236,7 @@ class TestArchitecture(BaseBrowserTest):
         async def run():
             await client.connect(target_id=self.tab_id)
             # Test navigation with remaining timeout handling
-            res = await client.navigate(
-                "about:blank", wait_until_loaded=True, timeout=5.0
-            )
+            res = await client.navigate("about:blank", wait_until_loaded=True, timeout=5.0)
             self.assertIn("frameId", res)
             await client.close()
 
@@ -273,9 +267,7 @@ class TestArchitecture(BaseBrowserTest):
 
         # Simulate Target.detachedFromTarget
         client.frame_sessions.pop("session_frame_1", None)
-        stale_refs = [
-            r for r, sid in client.ref_session_map.items() if sid == "session_frame_1"
-        ]
+        stale_refs = [r for r, sid in client.ref_session_map.items() if sid == "session_frame_1"]
         for r in stale_refs:
             client.ref_session_map.pop(r, None)
 
@@ -295,9 +287,7 @@ class TestArchitecture(BaseBrowserTest):
 
         eval_calls = []
 
-        async def mock_evaluate(
-            expr, await_promise=True, timeout=10.0, session_id=None
-        ):
+        async def mock_evaluate(expr, await_promise=True, timeout=10.0, session_id=None):
             eval_calls.append({"expr": expr, "session_id": session_id})
             if expr.strip() == "window.location.href":
                 return "https://main.example.com"
@@ -322,9 +312,7 @@ class TestArchitecture(BaseBrowserTest):
                     "root": "document",
                     "in_viewport": False,
                     "headings": ["H2: Enter Card"],
-                    "interactive": [
-                        '@2 (iframe:pay.example.com) [input] [type=text name="card"]'
-                    ],
+                    "interactive": ['@2 (iframe:pay.example.com) [input] [type=text name="card"]'],
                     "ref_ids": [2],
                     "next_id": 3,
                     "count": 1,

@@ -10,9 +10,7 @@ class TestFastBrowser(BaseBrowserTest):
     def test_list_targets(self):
         targets = self.cdp.list_targets()
         self.assertIsInstance(targets, list)
-        self.assertGreater(
-            len(targets), 0, "Should find running browser targets on port 9222"
-        )
+        self.assertGreater(len(targets), 0, "Should find running browser targets on port 9222")
 
     def test_snapshot_and_eval(self):
         async def run():
@@ -26,7 +24,6 @@ class TestFastBrowser(BaseBrowserTest):
             await self.cdp.close()
 
         asyncio.run(run())
-
 
     def test_batch_execution(self):
         async def run():
@@ -45,8 +42,6 @@ class TestFastBrowser(BaseBrowserTest):
 
         asyncio.run(run())
 
-
-
     def test_contenteditable_fill_and_dismiss_banners(self):
         async def run():
             await self.cdp.connect(target_id=self.tab_id)
@@ -64,12 +59,8 @@ class TestFastBrowser(BaseBrowserTest):
             })()"""
             )
             # Use cdp.fill on contenteditable with press_enter=True
-            await self.cdp.fill(
-                "#editor", "Updated Content", clear=True, press_enter=True
-            )
-            text = await self.cdp.evaluate(
-                "document.getElementById('editor').innerText"
-            )
+            await self.cdp.fill("#editor", "Updated Content", clear=True, press_enter=True)
+            text = await self.cdp.evaluate("document.getElementById('editor').innerText")
             self.assertIn("Updated Content", text)
             entered = await self.cdp.evaluate("window.__entered()")
             self.assertTrue(entered)
@@ -90,9 +81,7 @@ class TestFastBrowser(BaseBrowserTest):
             res = await batch.execute([{"action": "dismiss_banners"}])
             self.assertTrue(res["success"])
             # verify dialog was removed
-            exists = await self.cdp.evaluate(
-                "Boolean(document.querySelector('dialog'))"
-            )
+            exists = await self.cdp.evaluate("Boolean(document.querySelector('dialog'))")
             self.assertFalse(exists)
 
             await self.cdp.close()

@@ -45,9 +45,7 @@ class TestReaCdpFeatures(BaseBrowserTest):
             self.assertTrue(click_l["passive"])
             self.assertIn("handleClick", click_l["handler"])
 
-            custom_l = next(
-                item for item in res_sel["listeners"] if item["type"] == "custom_event"
-            )
+            custom_l = next(item for item in res_sel["listeners"] if item["type"] == "custom_event")
             self.assertTrue(custom_l["once"])
 
             # 2. Test by snapshot @ref
@@ -65,9 +63,7 @@ class TestReaCdpFeatures(BaseBrowserTest):
             self.assertGreaterEqual(res_ref["listeners_count"], 2)
 
             # 3. Test non-existent element
-            res_none = await self.cdp.get_event_listeners(
-                selector="#non-existent"
-            )
+            res_none = await self.cdp.get_event_listeners(selector="#non-existent")
             self.assertEqual(res_none["status"], "not_found")
 
             await self.cdp.close()
@@ -104,9 +100,7 @@ class TestReaCdpFeatures(BaseBrowserTest):
             await asyncio.sleep(0.3)
 
             # Start coverage
-            start_res = await self.cdp.start_coverage(
-                detailed=True, call_count=True
-            )
+            start_res = await self.cdp.start_coverage(detailed=True, call_count=True)
             self.assertEqual(start_res["status"], "started")
 
             # Execute code via button click
@@ -182,9 +176,7 @@ class TestReaCdpFeatures(BaseBrowserTest):
 
                     b64 = base64.b64encode(b'{"mocked": true}').decode()
                     return {"response": {"body": b64}}
-                return await self.cdp._original_send(
-                    method, params=params, **kwargs
-                )
+                return await self.cdp._original_send(method, params=params, **kwargs)
 
             self.cdp._original_send = self.cdp.send
             with patch.object(self.cdp, "send", side_effect=fake_send):
@@ -193,17 +185,13 @@ class TestReaCdpFeatures(BaseBrowserTest):
                     "evaluate",
                     new=AsyncMock(return_value="https://example.com"),
                 ):
-                    cache_data = await self.cdp.get_cache_storage(
-                        include_response_body=True
-                    )
+                    cache_data = await self.cdp.get_cache_storage(include_response_body=True)
                     self.assertEqual(cache_data["total_caches"], 1)
                     c = cache_data["caches"][0]
                     self.assertEqual(c["cacheName"], "api-v1")
                     self.assertEqual(c["entries_count"], 1)
                     entry = c["entries"][0]
-                    self.assertEqual(
-                        entry["requestURL"], "https://example.com/api/data"
-                    )
+                    self.assertEqual(entry["requestURL"], "https://example.com/api/data")
                     self.assertEqual(entry["responseBody"], '{"mocked": true}')
 
             await self.cdp.close()

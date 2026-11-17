@@ -13,9 +13,7 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
     """Test the integrity and schema validation of tool definitions and handler registry."""
 
     def test_tool_count_and_exact_match(self):
-        self.assertEqual(
-            len(TOOLS), 95, "Expected exactly 95 registered tools in TOOLS"
-        )
+        self.assertEqual(len(TOOLS), 95, "Expected exactly 95 registered tools in TOOLS")
         self.assertEqual(
             len(TOOL_REGISTRY),
             95,
@@ -23,9 +21,7 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
         )
         tools_names = {t["name"] for t in TOOLS}
         registry_names = set(TOOL_REGISTRY.keys())
-        self.assertEqual(
-            tools_names, registry_names, f"Difference: {tools_names ^ registry_names}"
-        )
+        self.assertEqual(tools_names, registry_names, f"Difference: {tools_names ^ registry_names}")
 
     def test_tool_schemas(self):
         for tool_def in TOOLS:
@@ -64,9 +60,7 @@ class TestServerRegistryAndSchemas(unittest.TestCase):
         }
         for name in conn_tools:
             handler_info = TOOL_REGISTRY[name]
-            self.assertTrue(
-                handler_info.requires_connection, f"{name} should require connection"
-            )
+            self.assertTrue(handler_info.requires_connection, f"{name} should require connection")
 
 
 class TestServerPathSandboxing(unittest.TestCase):
@@ -143,9 +137,7 @@ class TestServerStdioTransport(unittest.IsolatedAsyncioTestCase):
     async def test_read_message_content_length_framing(self):
         server = MCPServer()
         reader = asyncio.StreamReader()
-        payload = json.dumps(
-            {"jsonrpc": "2.0", "id": 42, "method": "initialize"}
-        ).encode("utf-8")
+        payload = json.dumps({"jsonrpc": "2.0", "id": 42, "method": "initialize"}).encode("utf-8")
         header = f"Content-Length: {len(payload)}\r\n\r\n".encode()
         reader.feed_data(header + payload)
         reader.feed_eof()
@@ -226,9 +218,7 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_navigate(self):
         self.server.cdp.navigate = AsyncMock(return_value={"status": "ok"})
-        res = await self.server.handle_call(
-            "browser_navigate", {"url": "https://anthropic.com"}
-        )
+        res = await self.server.handle_call("browser_navigate", {"url": "https://anthropic.com"})
         self.assertIn("Navigated to https://anthropic.com", res)
         self.server.cdp.navigate.assert_awaited_once_with("https://anthropic.com")
 
@@ -248,9 +238,7 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         )
         res = json.loads(res_str)
         self.assertEqual(res["status"], "dialog_handled")
-        self.server.cdp.handle_dialog.assert_awaited_once_with(
-            action="accept", prompt_text="hello"
-        )
+        self.server.cdp.handle_dialog.assert_awaited_once_with(action="accept", prompt_text="hello")
 
     async def test_handle_call_screencast(self):
         self.server.cdp.start_screencast = AsyncMock()
@@ -258,9 +246,7 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         # Mock validate_path to just return the passed path for testing
         self.server.validate_path = MagicMock(return_value="/tmp/out.mp4")
 
-        await self.server.handle_call(
-            "browser_screencast_start", {"file_path": "/tmp/out.mp4"}
-        )
+        await self.server.handle_call("browser_screencast_start", {"file_path": "/tmp/out.mp4"})
         self.server.cdp.start_screencast.assert_awaited_once_with("/tmp/out.mp4")
 
         await self.server.handle_call("browser_screencast_stop", {})
@@ -285,7 +271,12 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         )
         res_str = await self.server.handle_call(
             "browser_route_intercept",
-            {"action": "mock", "url_pattern": "*api/test*", "status_code": 200, "body": '{"ok": true}'},
+            {
+                "action": "mock",
+                "url_pattern": "*api/test*",
+                "status_code": 200,
+                "body": '{"ok": true}',
+            },
         )
         res = json.loads(res_str)
         self.assertTrue(res["success"])
@@ -293,7 +284,10 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_discover_endpoints(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"success": True, "results": [{"status": "ok", "endpoints": {"endpoints": []}}]}
+            return_value={
+                "success": True,
+                "results": [{"status": "ok", "endpoints": {"endpoints": []}}],
+            }
         )
         res_str = await self.server.handle_call("browser_discover_endpoints", {})
         res = json.loads(res_str)
@@ -302,10 +296,14 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_diff_snapshot(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"success": True, "results": [{"status": "ok", "diff": {"added_count": 1}}]}
+            return_value={
+                "success": True,
+                "results": [{"status": "ok", "diff": {"added_count": 1}}],
+            }
         )
         res_str = await self.server.handle_call(
-            "browser_diff_snapshot", {"previous_snapshot": "=== Page ===\nURL: http://a\n@ref:e1 button 'OK'"}
+            "browser_diff_snapshot",
+            {"previous_snapshot": "=== Page ===\nURL: http://a\n@ref:e1 button 'OK'"},
         )
         res = json.loads(res_str)
         self.assertTrue(res["success"])
@@ -321,9 +319,7 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         )
         res = json.loads(res_str)
         self.assertTrue(res["success"])
-        self.server.batch.execute.assert_awaited_with(
-            [{"action": "eval", "expression": "1+1"}]
-        )
+        self.server.batch.execute.assert_awaited_with([{"action": "eval", "expression": "1+1"}])
 
         # Test with 'actions' alias
         res_str2 = await self.server.handle_call(
@@ -331,9 +327,7 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         )
         res2 = json.loads(res_str2)
         self.assertTrue(res2["success"])
-        self.server.batch.execute.assert_awaited_with(
-            [{"action": "click", "selector": "#btn"}]
-        )
+        self.server.batch.execute.assert_awaited_with([{"action": "click", "selector": "#btn"}])
 
     async def test_handle_call_connect(self):
         self.server.cdp.switch_connection = AsyncMock(
@@ -354,9 +348,7 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         res = json.loads(res_str)
         self.assertIn("localStorage", res)
 
-        res_str = await self.server.handle_call(
-            "browser_import_session", {"session_data": res}
-        )
+        res_str = await self.server.handle_call("browser_import_session", {"session_data": res})
         res = json.loads(res_str)
         self.assertEqual(res["status"], "imported")
 
@@ -390,7 +382,9 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Test", tabs_res["text"])
 
         # Test browser://active/snapshot returns string formatted text
-        self.server.snapshot.capture_formatted = AsyncMock(return_value="=== Page: Test ===\n@1 [button] 'Click'")
+        self.server.snapshot.capture_formatted = AsyncMock(
+            return_value="=== Page: Test ===\n@1 [button] 'Click'"
+        )
         snap_res = await self.server.handle_resource_read("browser://active/snapshot")
         self.assertEqual(snap_res["mimeType"], "text/plain")
         self.assertIsInstance(snap_res["text"], str)
@@ -449,25 +443,41 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_human_mouse(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "detail": "Human clicked at (100.0, 200.0)"}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "detail": "Human clicked at (100.0, 200.0)"}],
+            }
         )
-        res_str = await self.server.handle_call("browser_human_mouse", {"x": 100, "y": 200, "action": "click"})
+        res_str = await self.server.handle_call(
+            "browser_human_mouse", {"x": 100, "y": 200, "action": "click"}
+        )
         res = json.loads(res_str)
         self.assertEqual(res["executed"], 1)
         self.assertEqual(res["results"][0]["status"], "ok")
 
     async def test_handle_call_set_adblock(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "adblock": {"enabled": True, "rules_count": 85}}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "adblock": {"enabled": True, "rules_count": 85}}],
+            }
         )
-        res_str = await self.server.handle_call("browser_set_adblock", {"enabled": True, "block_trackers": True})
+        res_str = await self.server.handle_call(
+            "browser_set_adblock", {"enabled": True, "block_trackers": True}
+        )
         res = json.loads(res_str)
         self.assertEqual(res["executed"], 1)
         self.assertTrue(res["results"][0]["adblock"]["enabled"])
 
     async def test_handle_call_smart_find(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "matches": [{"ref": "@e1", "score": 95}]}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "matches": [{"ref": "@e1", "score": 95}]}],
+            }
         )
         res_str = await self.server.handle_call("browser_smart_find", {"intent": "submit button"})
         res = json.loads(res_str)
@@ -476,29 +486,52 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_context_pool(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "browser_context_id": "ctx-123"}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "browser_context_id": "ctx-123"}],
+            }
         )
         res_str = await self.server.handle_call("browser_create_context", {})
         res = json.loads(res_str)
         self.assertEqual(res["results"][0]["browser_context_id"], "ctx-123")
 
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "browser_contexts": ["ctx-123"]}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "browser_contexts": ["ctx-123"]}],
+            }
         )
         res_str2 = await self.server.handle_call("browser_list_contexts", {})
         res2 = json.loads(res_str2)
         self.assertIn("ctx-123", res2["results"][0]["browser_contexts"])
 
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "detail": "Disposed browser context ctx-123"}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "detail": "Disposed browser context ctx-123"}],
+            }
         )
-        res_str3 = await self.server.handle_call("browser_dispose_context", {"browser_context_id": "ctx-123"})
+        res_str3 = await self.server.handle_call(
+            "browser_dispose_context", {"browser_context_id": "ctx-123"}
+        )
         res3 = json.loads(res_str3)
         self.assertEqual(res3["results"][0]["status"], "ok")
 
     async def test_handle_call_page_state(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "page_state": {"seq": 5, "url": "https://test.com", "backend": "chrome"}}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [
+                    {
+                        "status": "ok",
+                        "page_state": {"seq": 5, "url": "https://test.com", "backend": "chrome"},
+                    }
+                ],
+            }
         )
         res_str = await self.server.handle_call("browser_get_page_state", {})
         res = json.loads(res_str)
@@ -506,7 +539,11 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_paint_damage(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "paint_damage": {"status": "ok", "damaged_count": 2}}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "paint_damage": {"status": "ok", "damaged_count": 2}}],
+            }
         )
         res_str = await self.server.handle_call("browser_paint_damage", {"action": "get"})
         res = json.loads(res_str)
@@ -514,7 +551,11 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_turbo_mode(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "turbo_mode": {"status": "ok", "turbo": True}}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "turbo_mode": {"status": "ok", "turbo": True}}],
+            }
         )
         res_str = await self.server.handle_call("browser_turbo_mode", {"enabled": True})
         res = json.loads(res_str)
@@ -527,7 +568,11 @@ class TestServerMockToolDispatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_call_type(self):
         self.server.batch.execute = AsyncMock(
-            return_value={"total_steps": 1, "executed": 1, "results": [{"status": "ok", "detail": "Typed 4 characters"}]}
+            return_value={
+                "total_steps": 1,
+                "executed": 1,
+                "results": [{"status": "ok", "detail": "Typed 4 characters"}],
+            }
         )
         res_str = await self.server.handle_call("browser_type", {"text": "test", "delay_ms": 10.0})
         res = json.loads(res_str)

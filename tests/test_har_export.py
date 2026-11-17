@@ -55,9 +55,7 @@ class TestHarExportAndRedaction(unittest.TestCase):
             "Content-Type": "text/html",
         }
         redacted_dict = redact_headers(hdr_dict)
-        self.assertEqual(
-            redacted_dict["Authorization"], "Bearer [REDACTED]"
-        )
+        self.assertEqual(redacted_dict["Authorization"], "Bearer [REDACTED]")
         self.assertEqual(redacted_dict["Content-Type"], "text/html")
 
         # URL query param redactions
@@ -148,9 +146,7 @@ class TestHarExportAndRedaction(unittest.TestCase):
         cookie_h = next(h for h in req["headers"] if h["name"] == "Cookie")
         self.assertEqual(cookie_h["value"], "[REDACTED]")
 
-        cookie_item = next(
-            c for c in req["cookies"] if c["name"] == "session_id"
-        )
+        cookie_item = next(c for c in req["cookies"] if c["name"] == "session_id")
         self.assertEqual(cookie_item["value"], "[REDACTED]")
 
         self.assertIsNotNone(req["postData"])
@@ -163,9 +159,7 @@ class TestHarExportAndRedaction(unittest.TestCase):
         self.assertEqual(resp["content"]["mimeType"], "application/json")
         self.assertEqual(resp["content"]["size"], 256)
 
-        set_cookie_h = next(
-            h for h in resp["headers"] if h["name"] == "Set-Cookie"
-        )
+        set_cookie_h = next(h for h in resp["headers"] if h["name"] == "Set-Cookie")
         self.assertEqual(set_cookie_h["value"], "[REDACTED]")
 
         # Timings
@@ -204,9 +198,7 @@ class TestHarExportAndRedaction(unittest.TestCase):
             )
 
             har_path = os.path.join(self.tmpdir, "output.har")
-            await self.net.export_to_file(
-                har_path, format="har", redact_sensitive_headers=True
-            )
+            await self.net.export_to_file(har_path, format="har", redact_sensitive_headers=True)
 
             self.assertTrue(os.path.isfile(har_path))
             with open(har_path, encoding="utf-8") as f:

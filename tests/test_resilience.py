@@ -17,9 +17,7 @@ class TestResilience(BaseBrowserTest):
                 btn.textContent = 'Stable Button';
                 document.body.appendChild(btn);
             })()""")
-            stable = await self.cdp.wait_for_element_stable(
-                "#test-stable-btn", timeout_ms=2000
-            )
+            stable = await self.cdp.wait_for_element_stable("#test-stable-btn", timeout_ms=2000)
             self.assertTrue(stable)
             # Click with wait_stable=True
             ok = await self.cdp.click("#test-stable-btn", wait_stable=True)
@@ -64,9 +62,7 @@ class TestResilience(BaseBrowserTest):
             self.assertTrue(res_trunc["truncated"])
 
             # 3. Formatted snapshot
-            text = await snap.capture_formatted(
-                selector="#container-scope", in_viewport=True
-            )
+            text = await snap.capture_formatted(selector="#container-scope", in_viewport=True)
             self.assertIn("Btn 1", text)
             await self.cdp.close()
 
@@ -108,9 +104,7 @@ class TestResilience(BaseBrowserTest):
             # Timezone
             tz = await self.cdp.set_timezone("Europe/Kyiv")
             self.assertTrue(tz["success"])
-            actual_tz = await self.cdp.evaluate(
-                "Intl.DateTimeFormat().resolvedOptions().timeZone"
-            )
+            actual_tz = await self.cdp.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
             self.assertIn(actual_tz, ("Europe/Kyiv", "Europe/Kiev"))
             await self.cdp.close()
 
