@@ -82,6 +82,11 @@ Web applications load data asynchronously via Fetch/XHR.
 | Visual Screenshot Diff | `browser_compare_screenshots(before_path="...", after_path="...")` | `{"action": "compare_screenshots"}` |
 | JS Code Coverage | `browser_observe_coverage(duration_ms=...)` | `{"action": "start_coverage"}` / `{"action": "stop_coverage"}` |
 | Inspect CacheStorage | `browser_get_cache_storage()` | `{"action": "get_cache_storage"}` |
+| Paint Damage Tracking | `browser_paint_damage(action="mark")` | `{"action": "mark_paint_damage"}` / `{"action": "get_paint_damage"}` |
+| Turbo Mode (speedup) | `browser_turbo_mode(enabled=True)` | `{"action": "turbo_mode", "enabled": true}` |
+| Semantic Diff Snapshot | `browser_diff_snapshot()` | `{"action": "diff_snapshot"}` |
+| Smart Natural Element Find | `browser_smart_find(query="...")` | `{"action": "smart_find", "query": "..."}` |
+| Network Route Intercept | `browser_route_intercept(...)` | `{"action": "route_intercept", ...}` |
 | Reconnect to port | `browser_connect(port=...)` | — |
 | Launch standalone Chrome | `browser_launch(headless=True, profile_name=...)` | — |
 | Close browser process | `browser_close_browser()` | — |

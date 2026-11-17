@@ -31,7 +31,7 @@ Each individual MCP action (`navigate`, `wait`, `click`, `fill`) costs 3–5 sec
 }
 ```
 
-*Note: All 81 MCP tools have direct 1:1 action aliases supported in `browser_batch`.*
+*Note: All 95 MCP tools have direct 1:1 action aliases supported in `browser_batch`.*
 
 ---
 
@@ -140,3 +140,18 @@ Fast Browser MCP incorporates advanced runtime reverse-engineering capabilities 
     Returns status (`identical`, `different`), changed pixel percentage, and exact bounding box.
 *   **CacheStorage & Service Worker Inspection (`browser_get_cache_storage`):**
     Inspect client-side Cache API storage, PWA cached assets, and offline responses. Also accessible via `browser_get_storage(storage_type="cache")`.
+*   **Paint Damage & Zero-Cost Mutation Tracking (`browser_paint_damage`):**
+    Verify if a button click or form submit produced actual visual or DOM side-effects without taking expensive screenshots:
+    ```json
+    {
+      "steps": [
+        {"action": "mark_paint_damage"},
+        {"action": "click", "ref": "@3"},
+        {"action": "get_paint_damage"}
+      ]
+    }
+    ```
+*   **High-Speed Turbo Mode (`browser_turbo_mode`):**
+    Instantly disable images, custom fonts, CSS animations, and tracking stylesheets during crawling or scraping pipelines for maximum throughput.
+*   **Non-Intrusive Background Execution:**
+    Background tab operations default to `bring_to_front: false`. The browser executes in the background without stealing user window or keyboard focus.

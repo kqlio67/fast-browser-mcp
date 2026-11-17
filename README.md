@@ -101,31 +101,74 @@ URL: chrome://extensions/
 
 ### Requirements
 - Python 3.10 or newer
-- Google Chrome, Chromium, or Brave
+- Any Chromium-based browser (Google Chrome, Chromium, Brave, Microsoft Edge, or Kitesurf)
 
+### Option A: Direct Install with Pip
 ```bash
-# Clone the repository
+# Install directly from GitHub
+pip install git+https://github.com/kqlio67/fast-browser-mcp.git
+
+# Or install locally for development
 git clone https://github.com/kqlio67/fast-browser-mcp.git
 cd fast-browser-mcp
-
-# Install dependencies
-pip install -r requirements.txt
-
-# (Optional) Install editable package
 pip install -e .
 ```
+*After installation, two global commands are available in your PATH: `fast-browser` (CLI) and `fast-browser-mcp` (MCP stdio server).*
+
+### Option B: Instant Run with `uvx` (No Installation Needed)
+```bash
+# Run CLI commands instantly
+uvx --from git+https://github.com/kqlio67/fast-browser-mcp.git fast-browser --help
+
+# Or run the MCP server directly
+uvx --from git+https://github.com/kqlio67/fast-browser-mcp.git fast-browser-mcp
+```
+
+### Option C: Docker / Docker Compose (Isolated Container)
+```bash
+# Start container with built-in headless Chromium and dumb-init
+docker compose up -d
+```
+Or build and run manually:
+```bash
+docker build -t fast-browser-mcp .
+docker run -d -p 9222:9222 fast-browser-mcp
+```
+
+---
+
+## 🌍 Cross-Platform Compatibility
+
+Fast Browser MCP is built with zero binary C-extensions and operates entirely via native async Python WebSockets. It is tested and fully supported on:
+- **Linux** (Ubuntu, Debian, Arch, Fedora, AntiX): Auto-detects GUI display (`DISPLAY`, `WAYLAND_DISPLAY`) or falls back safely to `--headless=new`.
+- **Windows** (10, 11, Server): Automatically discovers Chrome, Edge (`msedge.exe`), and Brave in standard `Program Files` locations.
+- **macOS** (Apple Silicon M1-M4 & Intel): Automatically discovers browsers in `/Applications/`.
+- **Docker / Kubernetes / CI**: Automatically detects containerized environments (`/.dockerenv`, `cgroup`) or root privileges and applies `--no-sandbox` automatically.
+
+---
+
+## ⚙️ Environment Variables Reference
+
+| Variable | Default | Description |
+|---|---|---|
+| `FAST_BROWSER_AUTO_LAUNCH` | `0` (or `false`) | Set to `1` or `true` to automatically launch Chrome in the background if port 9222 is unreachable. |
+| `FAST_BROWSER_HOST` / `CDP_HOST` | `127.0.0.1` | Host address of the CDP endpoint. |
+| `FAST_BROWSER_PORT` / `CDP_PORT` | `9222` | TCP port of the CDP remote debugging endpoint. |
+| `CHROME_PATH` / `BROWSER_PATH` | *auto-detected* | Custom path to the Chrome/Chromium/Brave/Edge binary. |
+| `FAST_BROWSER_ALLOWED_DIR` | *unrestricted* | Restrict file reads and writes (e.g. downloads, traffic exports, sessions) to this root directory to prevent directory traversal. |
+| `FAST_BROWSER_PROFILES_DIR` | `~/.config/fast-browser/profiles` | Base directory for persistent named browser profiles (`--profile`). |
 
 ---
 
 ## ⚙️ Quickstart & Setup
 
 ### 1. Launch Chrome with Remote Debugging
-Start your browser with `--remote-debugging-port=9222`:
+If `FAST_BROWSER_AUTO_LAUNCH=1` is configured, you can skip this step! Otherwise, start your browser with `--remote-debugging-port=9222`:
 
 **Linux (Standard Desktop GUI):**
 ```bash
 google-chrome --remote-debugging-port=9222 &
-# Or if using Chromium / Helium:
+# Or if using Chromium:
 chromium --remote-debugging-port=9222 &
 ```
 
@@ -158,6 +201,10 @@ chrome.exe --remote-debugging-port=9222
 
 #### Google Antigravity
 ```bash
+agy mcp add fast-browser fast-browser-mcp
+```
+*Or using Python module path:*
+```bash
 agy mcp add --env PYTHONPATH=/path/to/fast-browser-mcp fast-browser python3 -m fast_browser.server
 ```
 
@@ -166,10 +213,9 @@ agy mcp add --env PYTHONPATH=/path/to/fast-browser-mcp fast-browser python3 -m f
 {
   "mcpServers": {
     "fast-browser": {
-      "command": "python3",
-      "args": ["-m", "fast_browser.server"],
+      "command": "fast-browser-mcp",
       "env": {
-        "PYTHONPATH": "/path/to/fast-browser-mcp"
+        "FAST_BROWSER_AUTO_LAUNCH": "1"
       }
     }
   }
@@ -178,13 +224,12 @@ agy mcp add --env PYTHONPATH=/path/to/fast-browser-mcp fast-browser python3 -m f
 
 #### Cursor / Windsurf
 Add Fast Browser MCP as an MCP stdio server executing:
-- **Command:** `python3`
-- **Args:** `["-m", "fast_browser.server"]`
-- **Environment:** `PYTHONPATH=/path/to/fast-browser-mcp`
+- **Command:** `fast-browser-mcp` (or `python3 -m fast_browser.server`)
+- **Environment:** `FAST_BROWSER_AUTO_LAUNCH=1`
 
 ---
 
-## 🛠️ Complete Tool Reference (81 Tools)
+## 🛠️ Complete Tool Reference (95 Tools)
 
 ### 🚀 Process & Lifecycle Management
 | Tool | Description |
